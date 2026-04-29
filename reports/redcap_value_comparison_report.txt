@@ -1,0 +1,228 @@
+Parsing MEM files...
+================================================================================
+  REDCAP vs PYTHON TMS VALUE COMPARISON REPORT
+  Generated: 2026-04-08 12:57
+  Parser: reads A-SICI from !A-SICIvISI(rel), A-SICF from !A-SICFvISI(rel)
+  Matching: (record_id, date, cortex)
+================================================================================
+
+1. DATA SUMMARY
+----------------------------------------
+  Python SNBR records:       261
+  REDCap total rows:         1410
+  Matched (ID+Date+Cortex):  146
+  Unmatched Python records:  115
+  Shared TMS columns:        78
+
+2. OVERALL MATCH STATISTICS
+----------------------------------------
+  Total value comparisons:   2742
+  Exact matches (diff <= 0.01): 2645
+  Mismatches:                97
+  Overall match rate:        96.5%
+
+3. PER-COLUMN MATCH RATES
+--------------------------------------------------------------------------------
+  Column                         Compared  Match   Diff  Match%  PyOnly  RCOnly
+  ----------------------------------------------------------------------------
+  [RMT]
+  rmt50                               117    106     11   90.6%       0      12
+  rmt200                              125    114     11   91.2%       1      14
+  rmt1000                              63     60      3   95.2%       4       5
+  [CSP]
+  csp_80                               48     48      0  100.0%       0      20
+  csp_100                              48     48      0  100.0%       0      20
+  csp_120                              49     49      0  100.0%       0      20
+  csp_140                              45     45      0  100.0%       0      14
+  csp_160                              43     43      0  100.0%       0      12
+  [T-SICI]
+  t_sici_p_1_0_ms                     115    108      7   93.9%       0      23
+  t_sici_p_1_5_ms                     105     98      7   93.3%       0      23
+  t_sici_p_2_0_ms                     105     98      7   93.3%       0      23
+  t_sici_p_2_5_ms                     115    108      7   93.9%       0      23
+  t_sici_p_3_0_ms                     115    106      9   92.2%       0      23
+  t_sici_p_3_5_ms                     105     98      7   93.3%       0      23
+  [T-SICF]
+  t_sicf_p_1_0_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_1_3_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_1_6_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_1_9_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_2_2_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_2_5_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_2_8_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_3_1_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_3_4_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_3_7_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_4_0_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_4_3_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_4_6_ms                      45     44      1   97.8%       0      30
+  t_sicf_p_4_9_ms                      45     44      1   97.8%       0      30
+  [A-SICI]
+  a_sici_1000_1_0_ms                   54     54      0  100.0%       0      15
+  a_sici_1000_1_5_ms                   50     50      0  100.0%       0      15
+  a_sici_1000_2_0_ms                   50     50      0  100.0%       0      15
+  a_sici_1000_2_5_ms                   54     54      0  100.0%       0      15
+  a_sici_1000_3_0_ms                   54     54      0  100.0%       0      15
+  a_sici_1000_3_5_ms                   50     50      0  100.0%       0      15
+  [A-SICF]
+  a_sicf_1_0_ms                        43     42      1   97.7%       0      11
+  a_sicf_1_3_ms                        43     42      1   97.7%       0      11
+  a_sicf_1_6_ms                        43     42      1   97.7%       0      11
+  a_sicf_1_9_ms                        43     42      1   97.7%       0      11
+  a_sicf_2_2_ms                        43     42      1   97.7%       0      11
+  a_sicf_2_5_ms                        43     42      1   97.7%       0      11
+  a_sicf_2_8_ms                        43     42      1   97.7%       0      11
+  a_sicf_3_1_ms                        43     42      1   97.7%       0      11
+  a_sicf_3_4_ms                        43     42      1   97.7%       0      11
+  a_sicf_3_7_ms                        43     42      1   97.7%       0      11
+  a_sicf_4_0_ms                        43     42      1   97.7%       0      11
+  a_sicf_4_3_ms                        43     42      1   97.7%       0      11
+  a_sicf_4_6_ms                        43     42      1   97.7%       0      11
+  a_sicf_4_9_ms                        43     42      1   97.7%       0      11
+
+4. MISMATCH CATEGORIES
+----------------------------------------
+  Rounding (diff 0.01-1.0):     10
+  Small (diff 1.0-20):          60
+  Large (diff >20):             27
+  REDCap placeholder (val<=1):  0
+
+5. MISMATCH DETAILS BY PARTICIPANT
+--------------------------------------------------------------------------------
+  --- ID 96 | 2025-01-10 | cortex=L | event=followup_1_arm_2 ---
+    rmt200                          Py=     76.30  RC=     78.30  diff=     -2.00  [SMALL]
+
+  --- ID 97 | 2025-08-14 | cortex=L | event=followup_1_arm_2 ---
+    rmt200                          Py=     66.60  RC=     67.50  diff=     -0.90  [ROUNDING]
+
+  --- ID 108 | 2024-11-19 | cortex=L | event=baseline_arm_3 ---
+    rmt200                          Py=     52.90  RC=     54.00  diff=     -1.10  [SMALL]
+
+  --- ID 111 | 2024-11-26 | cortex=R | event=baseline_arm_4 ---
+    rmt200                          Py=     49.10  RC=     37.10  diff=    +12.00  [SMALL]
+
+  --- ID 120 | 2024-12-19 | cortex=L | event=baseline_arm_4 ---
+    rmt200                          Py=     41.30  RC=     69.90  diff=    -28.60  [LARGE]
+    rmt200                          Py=     41.30  RC=     69.90  diff=    -28.60  [LARGE]
+    rmt50                           Py=     42.80  RC=     61.50  diff=    -18.70  [SMALL]
+    rmt50                           Py=     42.80  RC=     61.50  diff=    -18.70  [SMALL]
+    rmt50                           Py=     42.80  RC=     61.50  diff=    -18.70  [SMALL]
+    t_sici_p_1_0_ms                 Py=    102.60  RC=    113.80  diff=    -11.20  [SMALL]
+    t_sici_p_1_0_ms                 Py=    102.60  RC=    113.80  diff=    -11.20  [SMALL]
+    t_sici_p_1_0_ms                 Py=    102.60  RC=    113.80  diff=    -11.20  [SMALL]
+    t_sici_p_1_5_ms                 Py=    106.90  RC=    100.10  diff=     +6.80  [SMALL]
+    t_sici_p_1_5_ms                 Py=    106.90  RC=    100.10  diff=     +6.80  [SMALL]
+    t_sici_p_1_5_ms                 Py=    106.90  RC=    100.10  diff=     +6.80  [SMALL]
+    t_sici_p_2_0_ms                 Py=    106.40  RC=    109.30  diff=     -2.90  [SMALL]
+    t_sici_p_2_0_ms                 Py=    106.40  RC=    109.30  diff=     -2.90  [SMALL]
+    t_sici_p_2_0_ms                 Py=    106.40  RC=    109.30  diff=     -2.90  [SMALL]
+    t_sici_p_2_5_ms                 Py=    108.20  RC=    138.50  diff=    -30.30  [LARGE]
+    t_sici_p_2_5_ms                 Py=    108.20  RC=    138.50  diff=    -30.30  [LARGE]
+    t_sici_p_2_5_ms                 Py=    108.20  RC=    138.50  diff=    -30.30  [LARGE]
+    t_sici_p_3_0_ms                 Py=    109.30  RC=    116.00  diff=     -6.70  [SMALL]
+    t_sici_p_3_0_ms                 Py=    109.30  RC=    116.00  diff=     -6.70  [SMALL]
+    t_sici_p_3_0_ms                 Py=    121.30  RC=    116.00  diff=     +5.30  [SMALL]
+    t_sici_p_3_0_ms                 Py=    121.30  RC=    116.00  diff=     +5.30  [SMALL]
+    t_sici_p_3_0_ms                 Py=    109.30  RC=    116.00  diff=     -6.70  [SMALL]
+    t_sici_p_3_5_ms                 Py=    103.10  RC=    104.10  diff=     -1.00  [ROUNDING]
+    t_sici_p_3_5_ms                 Py=    103.10  RC=    104.10  diff=     -1.00  [ROUNDING]
+    t_sici_p_3_5_ms                 Py=    103.10  RC=    104.10  diff=     -1.00  [ROUNDING]
+
+  --- ID 121 | 2025-01-09 | cortex=L | event=baseline_arm_4 ---
+    rmt200                          Py=     65.20  RC=     55.00  diff=    +10.20  [SMALL]
+    rmt200                          Py=     65.20  RC=     55.00  diff=    +10.20  [SMALL]
+    rmt50                           Py=     57.00  RC=     48.60  diff=     +8.40  [SMALL]
+    rmt50                           Py=     57.00  RC=     48.60  diff=     +8.40  [SMALL]
+    t_sici_p_1_0_ms                 Py=    130.10  RC=    128.80  diff=     +1.30  [SMALL]
+    t_sici_p_1_0_ms                 Py=    130.10  RC=    128.80  diff=     +1.30  [SMALL]
+    t_sici_p_1_5_ms                 Py=    108.50  RC=    113.80  diff=     -5.30  [SMALL]
+    t_sici_p_1_5_ms                 Py=    108.50  RC=    113.80  diff=     -5.30  [SMALL]
+    t_sici_p_2_0_ms                 Py=    109.00  RC=    123.50  diff=    -14.50  [SMALL]
+    t_sici_p_2_0_ms                 Py=    109.00  RC=    123.50  diff=    -14.50  [SMALL]
+    t_sici_p_2_5_ms                 Py=    117.30  RC=    128.70  diff=    -11.40  [SMALL]
+    t_sici_p_2_5_ms                 Py=    117.30  RC=    128.70  diff=    -11.40  [SMALL]
+    t_sici_p_3_0_ms                 Py=    123.00  RC=    132.20  diff=     -9.20  [SMALL]
+    t_sici_p_3_0_ms                 Py=    123.00  RC=    132.20  diff=     -9.20  [SMALL]
+    t_sici_p_3_5_ms                 Py=    122.00  RC=    122.30  diff=     -0.30  [ROUNDING]
+    t_sici_p_3_5_ms                 Py=    122.00  RC=    122.30  diff=     -0.30  [ROUNDING]
+
+  --- ID 127 | 2025-02-05 | cortex=L | event=baseline_arm_4 ---
+    rmt200                          Py=     55.60  RC=     48.20  diff=     +7.40  [SMALL]
+
+  --- ID 130 | 2025-02-28 | cortex=R | event=baseline_arm_2 ---
+    rmt1000                         Py=     80.50  RC=     80.00  diff=     +0.50  [ROUNDING]
+    rmt50                           Py=     56.90  RC=     53.80  diff=     +3.10  [SMALL]
+    rmt50                           Py=     51.30  RC=     53.80  diff=     -2.50  [SMALL]
+    t_sicf_p_1_0_ms                 Py=     89.50  RC=    130.10  diff=    -40.60  [LARGE]
+    t_sicf_p_1_3_ms                 Py=     78.70  RC=    126.70  diff=    -48.00  [LARGE]
+    t_sicf_p_1_6_ms                 Py=     78.60  RC=    126.90  diff=    -48.30  [LARGE]
+    t_sicf_p_1_9_ms                 Py=     91.00  RC=     83.50  diff=     +7.50  [SMALL]
+    t_sicf_p_2_2_ms                 Py=     99.60  RC=     97.90  diff=     +1.70  [SMALL]
+    t_sicf_p_2_5_ms                 Py=     99.70  RC=    119.40  diff=    -19.70  [SMALL]
+    t_sicf_p_2_8_ms                 Py=     92.20  RC=     92.90  diff=     -0.70  [ROUNDING]
+    t_sicf_p_3_1_ms                 Py=     88.00  RC=    112.00  diff=    -24.00  [LARGE]
+    t_sicf_p_3_4_ms                 Py=     77.70  RC=    109.60  diff=    -31.90  [LARGE]
+    t_sicf_p_3_7_ms                 Py=     82.90  RC=    112.40  diff=    -29.50  [LARGE]
+    t_sicf_p_4_0_ms                 Py=     80.90  RC=    129.40  diff=    -48.50  [LARGE]
+    t_sicf_p_4_3_ms                 Py=     95.50  RC=    121.50  diff=    -26.00  [LARGE]
+    t_sicf_p_4_6_ms                 Py=    100.40  RC=     90.10  diff=    +10.30  [SMALL]
+    t_sicf_p_4_9_ms                 Py=     83.10  RC=    123.80  diff=    -40.70  [LARGE]
+
+  --- ID 137 | 2025-04-01 | cortex=L | event=baseline_arm_4 ---
+    rmt50                           Py=     73.20  RC=    100.00  diff=    -26.80  [LARGE]
+
+  --- ID 156 | 2025-10-23 | cortex=R | event=baseline_arm_2 ---
+    rmt200                          Py=     51.20  RC=     60.20  diff=     -9.00  [SMALL]
+    rmt50                           Py=     50.30  RC=     53.60  diff=     -3.30  [SMALL]
+    t_sici_p_1_0_ms                 Py=     95.40  RC=     95.20  diff=     +0.20  [ROUNDING]
+    t_sici_p_1_5_ms                 Py=     92.10  RC=     91.10  diff=     +1.00  [ROUNDING]
+    t_sici_p_2_0_ms                 Py=     99.10  RC=     88.90  diff=    +10.20  [SMALL]
+    t_sici_p_2_5_ms                 Py=     96.10  RC=     94.30  diff=     +1.80  [SMALL]
+    t_sici_p_3_0_ms                 Py=     89.00  RC=     91.60  diff=     -2.60  [SMALL]
+    t_sici_p_3_5_ms                 Py=     91.80  RC=     95.10  diff=     -3.30  [SMALL]
+
+  --- ID 163 | 2025-10-22 | cortex=L | event=baseline_arm_4 ---
+    rmt50                           Py=     38.90  RC=     43.60  diff=     -4.70  [SMALL]
+
+  --- ID 166 | 2025-11-25 | cortex=L | event=baseline_arm_2 ---
+    a_sicf_1_0_ms                   Py=    314.50  RC=    249.10  diff=    +65.40  [LARGE]
+    a_sicf_1_3_ms                   Py=    452.70  RC=    337.60  diff=   +115.10  [LARGE]
+    a_sicf_1_6_ms                   Py=    336.00  RC=    351.90  diff=    -15.90  [SMALL]
+    a_sicf_1_9_ms                   Py=    239.10  RC=    193.40  diff=    +45.70  [LARGE]
+    a_sicf_2_2_ms                   Py=     84.10  RC=    162.00  diff=    -77.90  [LARGE]
+    a_sicf_2_5_ms                   Py=    180.80  RC=    198.30  diff=    -17.50  [SMALL]
+    a_sicf_2_8_ms                   Py=    255.10  RC=    121.60  diff=   +133.50  [LARGE]
+    a_sicf_3_1_ms                   Py=    457.00  RC=    212.90  diff=   +244.10  [LARGE]
+    a_sicf_3_4_ms                   Py=    311.50  RC=    182.60  diff=   +128.90  [LARGE]
+    a_sicf_3_7_ms                   Py=    282.20  RC=     86.50  diff=   +195.70  [LARGE]
+    a_sicf_4_0_ms                   Py=    149.50  RC=     86.20  diff=    +63.30  [LARGE]
+    a_sicf_4_3_ms                   Py=    193.50  RC=    101.70  diff=    +91.80  [LARGE]
+    a_sicf_4_6_ms                   Py=    210.00  RC=    133.00  diff=    +77.00  [LARGE]
+    a_sicf_4_9_ms                   Py=     84.90  RC=    179.50  diff=    -94.60  [LARGE]
+    rmt1000                         Py=     47.10  RC=     55.00  diff=     -7.90  [SMALL]
+    rmt200                          Py=     43.50  RC=     47.00  diff=     -3.50  [SMALL]
+    rmt50                           Py=     39.90  RC=     46.80  diff=     -6.90  [SMALL]
+    t_sici_p_1_0_ms                 Py=    116.10  RC=    125.70  diff=     -9.60  [SMALL]
+    t_sici_p_1_5_ms                 Py=     98.10  RC=    112.20  diff=    -14.10  [SMALL]
+    t_sici_p_2_0_ms                 Py=     98.30  RC=    105.80  diff=     -7.50  [SMALL]
+    t_sici_p_2_5_ms                 Py=     89.80  RC=    107.80  diff=    -18.00  [SMALL]
+    t_sici_p_3_0_ms                 Py=     86.10  RC=    103.60  diff=    -17.50  [SMALL]
+    t_sici_p_3_5_ms                 Py=     92.90  RC=    110.50  diff=    -17.60  [SMALL]
+
+  --- ID 171 | 2025-12-17 | cortex=R | event=baseline_arm_2 ---
+    rmt1000                         Py=     70.80  RC=     73.40  diff=     -2.60  [SMALL]
+
+6. PARTICIPANTS WITH LARGE DIFFERENCES (>20)
+----------------------------------------
+  Count: 4 participants
+  IDs: 120, 130, 137, 166
+
+  Ratio analysis (Python / REDCap) for large diffs:
+    ID 120: mean ratio=0.705, std=0.093 (5 values)
+    ID 130: mean ratio=0.694, std=0.063 (9 values)
+    ID 137: mean ratio=0.732, std=0.000 (1 values)
+    ID 166: mean ratio=1.605, std=0.718 (12 values)
+
+================================================================================
+END OF REPORT
+================================================================================
