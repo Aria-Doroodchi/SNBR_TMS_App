@@ -19,6 +19,10 @@ from core.user_settings import (
     KEY_REDCAP_DATA_DIR, KEY_REDCAP_DICT_DIR,
     KEY_REDCAP_TEMPLATE_DIR, KEY_REDCAP_EXPORT_DIR,
     KEY_REDCAP_XLSX_DIR,
+    KEY_SMTP_HOST, KEY_SMTP_PORT,
+    KEY_EMAIL_USERNAME, KEY_EMAIL_FROM,
+    KEY_EMAIL_DEFAULT_TO, KEY_EMAIL_DEFAULT_CC, KEY_EMAIL_DEFAULT_BCC,
+    KEY_EMAIL_SUBJECT, KEY_EMAIL_BODY, KEY_EMAIL_REMEMBER_PASSWORD,
 )
 from processing.df_builder import (
     _apply_cmap_merge,
@@ -52,6 +56,7 @@ class AppController:
         self._csv_path: str = ""  # a *file* path, not a directory
         self._dataframe: pd.DataFrame | None = None
         self._quick_start_message: str = ""
+        self._last_exported_pdf: str = ""
 
         self._apply_defaults()
 
@@ -867,12 +872,149 @@ class AppController:
         summary["redcap_template_file"] = redcap_template.name
         return summary
 
+    # ── Email Report ──────────────────────────────────────
+
+    def set_last_exported_pdf(self, path: str) -> None:
+        """Record the path of the most recently written PDF report.
+
+        The Email Report panel reads this to pre-fill the attachment field.
+        """
+        self._last_exported_pdf = path or ""
+
+    def get_last_exported_pdf(self) -> str:
+        return self._last_exported_pdf
+
+    def get_email_defaults(self) -> dict[str, str]:
+        """Return all saved email defaults plus the password (from keyring).
+
+        Password is resolved from Windows Credential Manager keyed by the
+        saved username; absent or unreadable returns "".
+        """
+        from emailing.credentials import load_password
+        saved = load_defaults()
+        username = saved.get(KEY_EMAIL_USERNAME, "")
+        remember = saved.get(KEY_EMAIL_REMEMBER_PASSWORD, "") == "1"
+        password = ""
+        if remember and username:
+            password = load_password(username) or ""
+        return {
+            "smtp_host": saved.get(KEY_SMTP_HOST, ""),
+            "smtp_port": saved.get(KEY_SMTP_PORT, ""),
+            "username": username,
+            "password": password,
+            "from_addr": saved.get(KEY_EMAIL_FROM, ""),
+            "to": saved.get(KEY_EMAIL_DEFAULT_TO, ""),
+            "cc": saved.get(KEY_EMAIL_DEFAULT_CC, ""),
+            "bcc": saved.get(KEY_EMAIL_DEFAULT_BCC, ""),
+            "subject": saved.get(KEY_EMAIL_SUBJECT, ""),
+            "body": saved.get(KEY_EMAIL_BODY, ""),
+            "remember_password": remember,
+        }
+
+    def save_email_defaults(
+        self,
+        *,
+        smtp_host: str,
+        smtp_port: str,
+        username: str,
+        from_addr: str,
+        to: str,
+        cc: str,
+        bcc: str,
+        subject: str,
+        body: str,
+        remember_password: bool,
+        password: str | None,
+    ) -> None:
+        """Persist email defaults to JSON; password to Windows Credential Manager."""
+        from emailing.credentials import save_password, delete_password
+        save_defaults(**{
+            KEY_SMTP_HOST: smtp_host,
+            KEY_SMTP_PORT: smtp_port,
+            KEY_EMAIL_USERNAME: username,
+            KEY_EMAIL_FROM: from_addr,
+            KEY_EMAIL_DEFAULT_TO: to,
+            KEY_EMAIL_DEFAULT_CC: cc,
+            KEY_EMAIL_DEFAULT_BCC: bcc,
+            KEY_EMAIL_SUBJECT: subject,
+            KEY_EMAIL_BODY: body,
+            KEY_EMAIL_REMEMBER_PASSWORD: "1" if remember_password else "",
+        })
+        if remember_password and username and password:
+            save_password(username, password)
+        elif username:
+            # User unchecked the box (or cleared the password) — purge any
+            # previously-stored credential so we don't leave a stale entry.
+            delete_password(username)
+
+    def prepare_report_pdf_for_email(self) -> str:
+        """Return a path to a PDF suitable for emailing.
+
+        Uses the file written by the Export page if one exists; otherwise
+        renders the in-memory report figures to a temp file so the user can
+        email without an explicit export. Raises ValueError if no figures
+        are available either.
+        """
+        existing = self.get_last_exported_pdf()
+        if existing and Path(existing).is_file():
+            return existing
+
+        figures = self.get_report_figures()
+        if not figures:
+            raise ValueError(
+                "No report figures are available — please open the "
+                "Visualization page first.",
+            )
+
+        import tempfile
+        from datetime import datetime
+        from reports.pdf_renderer import render_figures_to_pdf
+
+        suffix = self.get_export_suffix() or ""
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        tmp_dir = Path(tempfile.gettempdir()) / "snbr_email_outgoing"
+        tmp_dir.mkdir(parents=True, exist_ok=True)
+        tmp_path = tmp_dir / f"SNBR_TMS_Report{suffix}_{stamp}.pdf"
+        render_figures_to_pdf(figures, str(tmp_path))
+        return str(tmp_path)
+
+    def send_report_email(
+        self,
+        *,
+        smtp_host: str,
+        smtp_port: int,
+        username: str,
+        password: str,
+        from_addr: str,
+        to_addrs: list[str],
+        cc_addrs: list[str],
+        bcc_addrs: list[str],
+        subject: str,
+        body: str,
+        attachment_path: str,
+    ) -> None:
+        """Send the email synchronously. GUI callers must run on a worker thread."""
+        from emailing.smtp_sender import send_email_with_attachment
+        send_email_with_attachment(
+            smtp_host=smtp_host,
+            smtp_port=smtp_port,
+            username=username,
+            password=password,
+            from_addr=from_addr,
+            to_addrs=to_addrs,
+            cc_addrs=cc_addrs,
+            bcc_addrs=bcc_addrs,
+            subject=subject,
+            body=body,
+            attachment_path=Path(attachment_path),
+        )
+
     # ── Default Phase Execution ───────────────────────────
 
     # Page-index mapping (must match _page_order in app.py)
     PAGE_NAMES = [
         "welcome", "file_panel", "data_mode", "participant",
-        "visualization", "export", "redcap", "sync", "finish",
+        "visualization", "export", "email", "redcap", "sync", "finish",
     ]
 
     def check_defaults_for_range(
@@ -911,7 +1053,9 @@ class AppController:
                     missing.append(
                         "Export: No default CSV or PDF export path."
                     )
-            elif idx == 6:  # redcap
+            elif idx == 6:  # email — opt-in, never required
+                pass
+            elif idx == 7:  # redcap
                 for key, label in [
                     (KEY_REDCAP_DATA_DIR, "REDCap Data Directory"),
                     (KEY_REDCAP_DICT_DIR, "REDCap Dictionary Directory"),
@@ -921,7 +1065,7 @@ class AppController:
                     if not saved.get(key, ""):
                         missing.append(f"REDCap Export: No default {label}.")
                         break  # one message is enough
-            elif idx == 7:  # sync — best-effort, no hard requirement
+            elif idx == 8:  # sync — best-effort, no hard requirement
                 pass
 
         return missing
@@ -968,6 +1112,9 @@ class AppController:
             "sync_pairs": [],
             "sync_result": None,
             "redcap_summary": None,
+            "email_sent": False,
+            "email_to": [],
+            "email_error": "",
         }
 
         # Phase 1 — file_panel: set paths
@@ -1120,12 +1267,53 @@ class AppController:
                 from reports.pdf_renderer import render_figures_to_pdf
                 figs = self.get_report_figures()
                 render_figures_to_pdf(figs, pdf_path)
+                self.set_last_exported_pdf(pdf_path)
 
             summary["csv_export"] = csv_path
             summary["pdf_export"] = pdf_path
 
-        # Phase 6 — redcap
+        # Phase 6 — email (opt-in, auto-send only with full saved defaults)
         if from_index <= 6 < to_index:
+            email_defaults = self.get_email_defaults()
+            to_list = [a.strip() for a in email_defaults["to"].split(",") if a.strip()]
+            cc_list = [a.strip() for a in email_defaults["cc"].split(",") if a.strip()]
+            bcc_list = [a.strip() for a in email_defaults["bcc"].split(",") if a.strip()]
+            ready = (
+                email_defaults["remember_password"]
+                and email_defaults["password"]
+                and email_defaults["smtp_host"]
+                and email_defaults["smtp_port"].isdigit()
+                and email_defaults["from_addr"]
+                and to_list
+            )
+            if ready:
+                _status("Sending email...")
+                try:
+                    attach = self.prepare_report_pdf_for_email()
+                    self.send_report_email(
+                        smtp_host=email_defaults["smtp_host"],
+                        smtp_port=int(email_defaults["smtp_port"]),
+                        username=email_defaults["username"],
+                        password=email_defaults["password"],
+                        from_addr=email_defaults["from_addr"],
+                        to_addrs=to_list,
+                        cc_addrs=cc_list,
+                        bcc_addrs=bcc_list,
+                        subject=email_defaults["subject"],
+                        body=email_defaults["body"],
+                        attachment_path=attach,
+                    )
+                    summary["email_sent"] = True
+                    summary["email_to"] = to_list
+                except Exception as exc:
+                    summary["email_sent"] = False
+                    summary["email_error"] = f"{type(exc).__name__}: {exc}"
+            else:
+                summary["email_sent"] = False
+                summary["email_error"] = "Skipped (no saved email defaults)."
+
+        # Phase 7 — redcap
+        if from_index <= 7 < to_index:
             rc_data = saved.get(KEY_REDCAP_DATA_DIR, "")
             rc_dict = saved.get(KEY_REDCAP_DICT_DIR, "")
             rc_tpl = saved.get(KEY_REDCAP_TEMPLATE_DIR, "")
@@ -1142,8 +1330,8 @@ class AppController:
                 except Exception:
                     pass  # best-effort
 
-        # Phase 7 — sync
-        if from_index <= 7 < to_index:
+        # Phase 8 — sync
+        if from_index <= 8 < to_index:
             sync_pairs_data = self.get_sync_defaults()
             if sync_pairs_data:
                 _status("Syncing files...")

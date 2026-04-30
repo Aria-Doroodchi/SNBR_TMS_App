@@ -27,6 +27,18 @@ KEY_REDCAP_TEMPLATE_DIR = "redcap_template_dir"
 KEY_REDCAP_EXPORT_DIR = "redcap_export_dir"
 KEY_REDCAP_XLSX_DIR = "redcap_xlsx_dir"
 
+# Email defaults
+KEY_SMTP_HOST = "smtp_host"
+KEY_SMTP_PORT = "smtp_port"
+KEY_EMAIL_USERNAME = "email_username"
+KEY_EMAIL_FROM = "email_from"
+KEY_EMAIL_DEFAULT_TO = "email_default_to"
+KEY_EMAIL_DEFAULT_CC = "email_default_cc"
+KEY_EMAIL_DEFAULT_BCC = "email_default_bcc"
+KEY_EMAIL_SUBJECT = "email_subject"
+KEY_EMAIL_BODY = "email_body"
+KEY_EMAIL_REMEMBER_PASSWORD = "email_remember_password"
+
 
 def _read() -> dict:
     if _SETTINGS_FILE.exists():
@@ -68,6 +80,16 @@ def load_defaults() -> dict[str, str]:
         KEY_REDCAP_TEMPLATE_DIR: raw.get(KEY_REDCAP_TEMPLATE_DIR, ""),
         KEY_REDCAP_EXPORT_DIR: raw.get(KEY_REDCAP_EXPORT_DIR, ""),
         KEY_REDCAP_XLSX_DIR: raw.get(KEY_REDCAP_XLSX_DIR, ""),
+        KEY_SMTP_HOST: raw.get(KEY_SMTP_HOST, ""),
+        KEY_SMTP_PORT: raw.get(KEY_SMTP_PORT, ""),
+        KEY_EMAIL_USERNAME: raw.get(KEY_EMAIL_USERNAME, ""),
+        KEY_EMAIL_FROM: raw.get(KEY_EMAIL_FROM, ""),
+        KEY_EMAIL_DEFAULT_TO: raw.get(KEY_EMAIL_DEFAULT_TO, ""),
+        KEY_EMAIL_DEFAULT_CC: raw.get(KEY_EMAIL_DEFAULT_CC, ""),
+        KEY_EMAIL_DEFAULT_BCC: raw.get(KEY_EMAIL_DEFAULT_BCC, ""),
+        KEY_EMAIL_SUBJECT: raw.get(KEY_EMAIL_SUBJECT, ""),
+        KEY_EMAIL_BODY: raw.get(KEY_EMAIL_BODY, ""),
+        KEY_EMAIL_REMEMBER_PASSWORD: raw.get(KEY_EMAIL_REMEMBER_PASSWORD, ""),
     }
 
 

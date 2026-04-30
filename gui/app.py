@@ -6,6 +6,7 @@ import customtkinter as ctk
 
 from gui.controller import AppController
 from gui.data_mode_panel import DataModePanel
+from gui.email_panel import EmailPanel
 from gui.export_panel import ExportPanel
 from gui.file_panel import FilePanel
 from gui.finish_panel import FinishPanel
@@ -29,6 +30,7 @@ PAGE_LABELS = [
     ("participant",   "Participant"),
     ("visualization", "Visualization"),
     ("export",        "Export"),
+    ("email",         "Email Report"),
     ("redcap",        "REDCap Export"),
     ("sync",          "Backup & Sync"),
     ("finish",        "Finish"),
@@ -63,7 +65,7 @@ class TMSApp(ctk.CTk):
         # Ordered page names for keyboard navigation.
         self._page_order = [
             "welcome", "file_panel", "data_mode", "participant",
-            "visualization", "export", "redcap", "sync", "finish",
+            "visualization", "export", "email", "redcap", "sync", "finish",
         ]
 
         self._build_toolbar()
@@ -210,18 +212,28 @@ class TMSApp(ctk.CTk):
         export = ExportPanel(
             self._container,
             controller=self._controller,
-            on_next=lambda: self._show_page("redcap"),
+            on_next=lambda: self._show_page("email"),
             on_back=lambda: self._show_page("visualization"),
         )
         export.grid(row=0, column=0, sticky="nsew")
         self._pages["export"] = export
 
-        # Page 6 — REDCap export
+        # Page 6 — Email report
+        email = EmailPanel(
+            self._container,
+            controller=self._controller,
+            on_next=lambda: self._show_page("redcap"),
+            on_back=lambda: self._show_page("export"),
+        )
+        email.grid(row=0, column=0, sticky="nsew")
+        self._pages["email"] = email
+
+        # Page 7 — REDCap export
         redcap = RedcapPanel(
             self._container,
             controller=self._controller,
             on_next=lambda: self._show_page("sync"),
-            on_back=lambda: self._show_page("export"),
+            on_back=lambda: self._show_page("email"),
         )
         redcap.grid(row=0, column=0, sticky="nsew")
         self._pages["redcap"] = redcap

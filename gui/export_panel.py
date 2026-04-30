@@ -273,6 +273,7 @@ class ExportPanel(ctk.CTkFrame):
                 pdf_path = self._controller.stamp_export_path(pdf_path)
                 figures = self._controller.get_report_figures()
                 render_figures_to_pdf(figures, pdf_path)
+                self._controller.set_last_exported_pdf(pdf_path)
                 results.append(f"PDF: {pdf_path}")
 
             self.after(0, self._on_export_success, "\n".join(results))

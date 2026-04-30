@@ -1842,6 +1842,18 @@
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\email\\utils.py',
    'PYMODULE'),
+  ('emailing',
+   'C:\\Users\\Ali '
+   'D\\Desktop\\Claude_App\\Claude_App_V2\\SNBR_TMS_App\\emailing\\__init__.py',
+   'PYMODULE'),
+  ('emailing.credentials',
+   'C:\\Users\\Ali '
+   'D\\Desktop\\Claude_App\\Claude_App_V2\\SNBR_TMS_App\\emailing\\credentials.py',
+   'PYMODULE'),
+  ('emailing.smtp_sender',
+   'C:\\Users\\Ali '
+   'D\\Desktop\\Claude_App\\Claude_App_V2\\SNBR_TMS_App\\emailing\\smtp_sender.py',
+   'PYMODULE'),
   ('et_xmlfile',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\et_xmlfile\\__init__.py',
@@ -2706,6 +2718,10 @@
    'C:\\Users\\Ali '
    'D\\Desktop\\Claude_App\\Claude_App_V2\\SNBR_TMS_App\\gui\\data_mode_panel.py',
    'PYMODULE'),
+  ('gui.email_panel',
+   'C:\\Users\\Ali '
+   'D\\Desktop\\Claude_App\\Claude_App_V2\\SNBR_TMS_App\\gui\\email_panel.py',
+   'PYMODULE'),
   ('gui.export_panel',
    'C:\\Users\\Ali '
    'D\\Desktop\\Claude_App\\Claude_App_V2\\SNBR_TMS_App\\gui\\export_panel.py',
@@ -2878,6 +2894,23 @@
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\ipaddress.py',
    'PYMODULE'),
+  ('jaraco', '-', 'PYMODULE'),
+  ('jaraco.classes',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\jaraco\\classes\\__init__.py',
+   'PYMODULE'),
+  ('jaraco.classes.properties',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\jaraco\\classes\\properties.py',
+   'PYMODULE'),
+  ('jaraco.context',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\jaraco\\context\\__init__.py',
+   'PYMODULE'),
+  ('jaraco.functools',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\jaraco\\functools\\__init__.py',
+   'PYMODULE'),
   ('json',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\json\\__init__.py',
@@ -2893,6 +2926,86 @@
   ('json.scanner',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\json\\scanner.py',
+   'PYMODULE'),
+  ('keyring',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\__init__.py',
+   'PYMODULE'),
+  ('keyring.backend',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backend.py',
+   'PYMODULE'),
+  ('keyring.backends',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\__init__.py',
+   'PYMODULE'),
+  ('keyring.backends.SecretService',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\SecretService.py',
+   'PYMODULE'),
+  ('keyring.backends.Windows',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\Windows.py',
+   'PYMODULE'),
+  ('keyring.backends.chainer',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\chainer.py',
+   'PYMODULE'),
+  ('keyring.backends.fail',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\fail.py',
+   'PYMODULE'),
+  ('keyring.backends.kwallet',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\kwallet.py',
+   'PYMODULE'),
+  ('keyring.backends.libsecret',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\libsecret.py',
+   'PYMODULE'),
+  ('keyring.backends.macOS',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\macOS\\__init__.py',
+   'PYMODULE'),
+  ('keyring.backends.macOS.api',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\macOS\\api.py',
+   'PYMODULE'),
+  ('keyring.backends.null',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\backends\\null.py',
+   'PYMODULE'),
+  ('keyring.compat',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\compat\\__init__.py',
+   'PYMODULE'),
+  ('keyring.compat.properties',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\compat\\properties.py',
+   'PYMODULE'),
+  ('keyring.compat.py312',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\compat\\py312.py',
+   'PYMODULE'),
+  ('keyring.core',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\core.py',
+   'PYMODULE'),
+  ('keyring.credentials',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\credentials.py',
+   'PYMODULE'),
+  ('keyring.errors',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\errors.py',
+   'PYMODULE'),
+  ('keyring.util',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\util\\__init__.py',
+   'PYMODULE'),
+  ('keyring.util.platform_',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\keyring\\util\\platform_.py',
    'PYMODULE'),
   ('kiwisolver',
    'C:\\Users\\Ali '
@@ -3413,6 +3526,18 @@
   ('mimetypes',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\mimetypes.py',
+   'PYMODULE'),
+  ('more_itertools',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\more_itertools\\__init__.py',
+   'PYMODULE'),
+  ('more_itertools.more',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\more_itertools\\more.py',
+   'PYMODULE'),
+  ('more_itertools.recipes',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\more_itertools\\recipes.py',
    'PYMODULE'),
   ('mpl_toolkits', '-', 'PYMODULE'),
   ('mpl_toolkits.mplot3d',
@@ -8634,29 +8759,9 @@
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\importlib_metadata\\compat\\py39.py',
    'PYMODULE'),
   ('setuptools._vendor.jaraco', '-', 'PYMODULE'),
-  ('setuptools._vendor.jaraco.context',
-   'C:\\Users\\Ali '
-   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\jaraco\\context\\__init__.py',
-   'PYMODULE'),
-  ('setuptools._vendor.jaraco.functools',
-   'C:\\Users\\Ali '
-   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\jaraco\\functools\\__init__.py',
-   'PYMODULE'),
   ('setuptools._vendor.jaraco.text',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\jaraco\\text\\__init__.py',
-   'PYMODULE'),
-  ('setuptools._vendor.more_itertools',
-   'C:\\Users\\Ali '
-   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\more_itertools\\__init__.py',
-   'PYMODULE'),
-  ('setuptools._vendor.more_itertools.more',
-   'C:\\Users\\Ali '
-   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\more_itertools\\more.py',
-   'PYMODULE'),
-  ('setuptools._vendor.more_itertools.recipes',
-   'C:\\Users\\Ali '
-   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\setuptools\\_vendor\\more_itertools\\recipes.py',
    'PYMODULE'),
   ('setuptools._vendor.packaging',
    'C:\\Users\\Ali '
@@ -8941,6 +9046,10 @@
   ('six',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\six.py',
+   'PYMODULE'),
+  ('smtplib',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\smtplib.py',
    'PYMODULE'),
   ('socket',
    'C:\\Users\\Ali '
@@ -9263,6 +9372,114 @@
   ('webbrowser',
    'C:\\Users\\Ali '
    'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\webbrowser.py',
+   'PYMODULE'),
+  ('win32ctypes',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\__init__.py',
+   'PYMODULE'),
+  ('win32ctypes.core',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\__init__.py',
+   'PYMODULE'),
+  ('win32ctypes.core._winerrors',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\_winerrors.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\__init__.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._authentication',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_authentication.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._common',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_common.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._dll',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_dll.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._nl_support',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_nl_support.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._resource',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_resource.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._system_information',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_system_information.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._time',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_time.py',
+   'PYMODULE'),
+  ('win32ctypes.core.cffi._util',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\cffi\\_util.py',
+   'PYMODULE'),
+  ('win32ctypes.core.compat',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\compat.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\__init__.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._authentication',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_authentication.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._common',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_common.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._dll',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_dll.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._nl_support',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_nl_support.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._resource',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_resource.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._system_information',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_system_information.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._time',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_time.py',
+   'PYMODULE'),
+  ('win32ctypes.core.ctypes._util',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\core\\ctypes\\_util.py',
+   'PYMODULE'),
+  ('win32ctypes.pywin32',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\pywin32\\__init__.py',
+   'PYMODULE'),
+  ('win32ctypes.pywin32.pywintypes',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\pywin32\\pywintypes.py',
+   'PYMODULE'),
+  ('win32ctypes.pywin32.win32api',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\pywin32\\win32api.py',
+   'PYMODULE'),
+  ('win32ctypes.pywin32.win32cred',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\pywin32\\win32cred.py',
+   'PYMODULE'),
+  ('win32ctypes.version',
+   'C:\\Users\\Ali '
+   'D\\AppData\\Local\\Programs\\Python\\Python314\\Lib\\site-packages\\win32ctypes\\version.py',
    'PYMODULE'),
   ('xml',
    'C:\\Users\\Ali '
