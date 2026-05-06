@@ -76,43 +76,53 @@ _DATE_DEPENDENT_SUFFIXES = (
     "_profile",
 )
 
+_WAVEFORM_SECTION_SUFFIXES = (
+    "_overall",
+    "_age_matched",
+    "_sex_matched",
+    "_sex_age_matched",
+    "_over_time",
+    "_visit_profiles",
+)
+
+
+def _waveform_sections(measure: str) -> list[str]:
+    return [f"{measure}{suffix}" for suffix in _WAVEFORM_SECTION_SUFFIXES]
+
+
 DEFAULT_REPORT_SECTIONS = [
     "summary",
     "visit_table",
     "cmap_table",
     "munix_table",
+    *_waveform_sections("t_sici"),
     "rmt_over_time",
-    "t_sici_over_time",
-    "t_sici_visit_profiles",
-    "t_sici_overall",
-    "t_sici_age_matched",
-    "t_sici_sex_matched",
-    "t_sici_sex_age_matched",
 ]
 
 
 def supported_report_sections() -> list[str]:
-    """Return all supported report-section keys in canonical order."""
+    """Return all supported report-section keys in canonical order.
+
+    Order: summary + visit-overview tables, then every t-SICI section, then
+    every RMT section, then the remaining waveform measures grouped by
+    measure (a_sici → a_sicf → t_sicf), then CSP last.
+    """
     keys = [
         "summary",
         "visit_table",
         "cmap_table",
         "munix_table",
+    ]
+    keys.extend(_waveform_sections("t_sici"))
+    keys.extend([
         "rmt_over_time",
         "rmt_overall",
         "rmt_age_matched",
         "rmt_sex_matched",
         "rmt_sex_age_matched",
-    ]
-    for measure in WAVEFORM_REPORT_MEASURES:
-        keys.extend([
-            f"{measure}_over_time",
-            f"{measure}_visit_profiles",
-            f"{measure}_overall",
-            f"{measure}_age_matched",
-            f"{measure}_sex_matched",
-            f"{measure}_sex_age_matched",
-        ])
+    ])
+    for measure in ("a_sici", "a_sicf", "t_sicf"):
+        keys.extend(_waveform_sections(measure))
     keys.extend(CSP_REPORT_SECTIONS)
     return keys
 
@@ -256,18 +266,21 @@ def _build_summary_figure(
     participant_label, participant_rows, visit_summary, visit_timeline,
     anchor_date_text,
 ):
-    """Build the participant information figure for page 1.
+    """Build the page-1 figure: demographics block + visit table.
 
-    Page 1 of every PDF report shows the letterhead banner on top and this
-    figure directly beneath.  It contains **only the participant's
-    demographic / study information** — the visit table and the visit
-    timeline live on their own dedicated page further back in the report.
+    The letterhead banner is rendered above this figure by
+    :func:`reports.pdf_layout.build_letterhead_banner_page`.  Fonts are
+    intentionally compact so both the demographic fields and the visit
+    table fit together below the banner on US-Letter portrait page 1.
     """
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(7.7, 5.2))
-    ax = fig.add_subplot(111)
-    ax.axis("off")
+    fig = plt.figure(figsize=(7.7, 8.2))
+    grid = fig.add_gridspec(2, 1, height_ratios=[0.85, 1.15], hspace=0.18)
+    info_ax = fig.add_subplot(grid[0])
+    table_ax = fig.add_subplot(grid[1])
+    info_ax.axis("off")
+    table_ax.axis("off")
 
     study = _latest_non_missing_study(participant_rows)
     age = _latest_non_missing_age(participant_rows)
@@ -276,13 +289,12 @@ def _build_summary_figure(
     cortex = _latest_non_missing_stimulated_cortex(participant_rows)
     visit_count = len(visit_timeline) if visit_timeline is not None else 0
 
-    ax.text(
-        0.0, 0.98, f"{participant_label} | Participant MEM report",
-        fontsize=18, fontweight="bold", color="#1F2A36",
-        ha="left", va="top", transform=ax.transAxes,
+    info_ax.text(
+        0.0, 0.99, f"{participant_label} | Participant MEM report",
+        fontsize=14, fontweight="bold", color="#1F2A36",
+        ha="left", va="top", transform=info_ax.transAxes,
     )
 
-    # Rendered as a two-column labelled block so nothing crowds onto one line.
     field_rows = [
         ("Study", study),
         ("Patient ID", participant_label),
@@ -295,86 +307,84 @@ def _build_summary_figure(
     ]
 
     top = 0.82
-    line_step = 0.08
+    line_step = 0.095
     label_x = 0.0
     value_x = 0.32
     for i, (label, value) in enumerate(field_rows):
         y = top - i * line_step
-        ax.text(
+        info_ax.text(
             label_x, y, f"{label}:",
-            fontsize=12, fontweight="bold", color="#1F2A36",
-            ha="left", va="top", transform=ax.transAxes,
+            fontsize=10, fontweight="bold", color="#1F2A36",
+            ha="left", va="top", transform=info_ax.transAxes,
         )
-        ax.text(
+        info_ax.text(
             value_x, y, str(value),
-            fontsize=12, color="#36495C",
-            ha="left", va="top", transform=ax.transAxes,
+            fontsize=10, color="#36495C",
+            ha="left", va="top", transform=info_ax.transAxes,
         )
 
-    fig.subplots_adjust(top=0.96, bottom=0.05, left=0.06, right=0.97)
+    table_ax.text(
+        0.0, 1.0, f"{participant_label} | Visit summary and tests present",
+        fontsize=11, fontweight="bold", color="#1F2A36",
+        ha="left", va="top", transform=table_ax.transAxes,
+    )
+
+    if visit_summary is not None and not visit_summary.empty:
+        tbl = table_ax.table(
+            cellText=_build_visit_table_rows(visit_summary),
+            colLabels=["Visit", "Date", "Days Since Previous", "MEM Files", "Sides Tested", "Tests Present"],
+            cellLoc="left", colLoc="left",
+            colWidths=VISIT_TABLE_COLUMN_WIDTHS,
+            bbox=(0.0, 0.10, 1.0, 0.84),
+        )
+        tbl.auto_set_font_size(False)
+        tbl.set_fontsize(7.5)
+        for (ri, _), cell in tbl.get_celld().items():
+            cell.set_edgecolor("#D8E0EA")
+            cell.set_linewidth(0.8)
+            if ri == 0:
+                cell.set_facecolor("#E9EEF4")
+                cell.set_text_props(weight="bold", color="#223142")
+            else:
+                cell.set_facecolor("#FFFFFF")
+        apply_visit_summary_table_layout(
+            tbl,
+            row_line_counts=visit_summary["tests_present_line_count"].tolist(),
+            bbox_height=0.84,
+        )
+
+        table_ax.text(
+            0.0, 0.04,
+            "Visit rows represent unique visit dates. Same-day MEM files are "
+            "grouped into one visit, and all extracted tests present that day are listed.",
+            fontsize=7.0, color="#5A6B7C",
+            ha="left", va="bottom", transform=table_ax.transAxes,
+        )
+
+    fig.subplots_adjust(top=0.97, bottom=0.04, left=0.06, right=0.97)
     return fig
 
 
 def _build_visit_overview_figure(
     participant_label, visit_summary, visit_timeline,
 ):
-    """Build the visit overview figure (visit table + visit timeline).
+    """Build the visit timeline figure for the ``visit_table`` section.
 
-    This is emitted by the ``visit_table`` report section and is placed on a
-    page of its own (usually page 2).  Previously this content was crammed
-    onto page 1 alongside the letterhead; it now has room to breathe.
+    The visit table itself is rendered on page 1 alongside the participant
+    demographics (see :func:`_build_summary_figure`).  This figure now
+    carries only the visit timeline so it composes naturally inside the
+    4-per-page body grid that follows.
     """
     import matplotlib.pyplot as plt
 
-    fig = plt.figure(figsize=(7.7, 8.2))
-    grid = fig.add_gridspec(2, 1, height_ratios=[1.35, 1.0], hspace=0.24)
-    table_ax = fig.add_subplot(grid[0])
-    timeline_ax = fig.add_subplot(grid[1])
-    table_ax.axis("off")
-
-    table_ax.text(
-        0.0, 1.0, f"{participant_label} | Visit summary and tests present",
-        fontsize=14, fontweight="bold", color="#1F2A36",
-        ha="left", va="top", transform=table_ax.transAxes,
-    )
-
-    tbl = table_ax.table(
-        cellText=_build_visit_table_rows(visit_summary),
-        colLabels=["Visit", "Date", "Days Since Previous", "MEM Files", "Sides Tested", "Tests Present"],
-        cellLoc="left", colLoc="left",
-        colWidths=VISIT_TABLE_COLUMN_WIDTHS,
-        bbox=(0.0, 0.08, 1.0, 0.86),
-    )
-    tbl.auto_set_font_size(False)
-    tbl.set_fontsize(9)
-    for (ri, _), cell in tbl.get_celld().items():
-        cell.set_edgecolor("#D8E0EA")
-        cell.set_linewidth(0.8)
-        if ri == 0:
-            cell.set_facecolor("#E9EEF4")
-            cell.set_text_props(weight="bold", color="#223142")
-        else:
-            cell.set_facecolor("#FFFFFF")
-    apply_visit_summary_table_layout(
-        tbl,
-        row_line_counts=visit_summary["tests_present_line_count"].tolist(),
-        bbox_height=0.86,
-    )
-
-    table_ax.text(
-        0.0, 0.02,
-        "Visit rows represent unique visit dates. Same-day MEM files are "
-        "grouped into one visit, and all extracted tests present that day are listed.",
-        fontsize=8.0, color="#5A6B7C",
-        ha="left", va="bottom", transform=table_ax.transAxes,
-    )
-
+    fig = plt.figure(figsize=(7.7, 4.0))
+    timeline_ax = fig.add_subplot(111)
     draw_participant_visit_timeline_axis(
         axis=timeline_ax, visit_timeline=visit_timeline,
         participant_label=participant_label,
         title=f"{participant_label} | Visit timeline",
     )
-    fig.subplots_adjust(top=0.96, bottom=0.06, left=0.06, right=0.97)
+    fig.subplots_adjust(top=0.92, bottom=0.14, left=0.08, right=0.97)
     return fig
 
 
@@ -960,10 +970,8 @@ def build_report_figures(
             if has_valid_dates
             else _build_summary_figure_no_dates(plabel, p_rows),
         ),
-        # 'visit_table' now renders a combined visit summary + timeline page
-        # (visit table on top half, timeline on bottom half) on its own page,
-        # because page 1 is reserved for the letterhead and the patient
-        # information block.
+        # 'visit_table' now renders the visit timeline only — the visit
+        # summary table itself moved onto page 1 alongside the demographics.
         "visit_table": lambda: _simple_item(
             "visit_table",
             _build_visit_overview_figure(plabel, visit_sum, visit_tl)

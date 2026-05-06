@@ -38,55 +38,53 @@ GRAPH_REGISTRY: list[GraphEntry] = [
     GraphEntry("visit_table", "Visit Test Table", "Visit Summary", "visit_table", None),
     GraphEntry("cmap_table", "CMAP Table", "Visit Summary", "cmap_table", None),
     GraphEntry("munix_table", "MUNIX Table", "Visit Summary", "munix_table", None),
-    # Waveform Profiles
+    # T-SICI cluster (everything about t-SICI together, in the report's section order)
     GraphEntry("profile__t_sici", "T-SICI Profile", "Waveform Profiles", "profile", "t_sici"),
-    GraphEntry("profile__a_sici", "A-SICI Profile", "Waveform Profiles", "profile", "a_sici"),
-    GraphEntry("profile__a_sicf", "A-SICF Profile", "Waveform Profiles", "profile", "a_sicf"),
-    GraphEntry("profile__t_sicf", "T-SICF Profile", "Waveform Profiles", "profile", "t_sicf"),
-    GraphEntry("profile__csp", "CSP Profile", "Waveform Profiles", "profile", "csp"),
-    # Cohort Comparisons (overall — no age/sex filtering)
     GraphEntry("grouped__t_sici", "T-SICI Grouped", "Cohort Comparisons", "grouped", "t_sici"),
-    GraphEntry("grouped__a_sici", "A-SICI Grouped", "Cohort Comparisons", "grouped", "a_sici"),
-    GraphEntry("grouped__a_sicf", "A-SICF Grouped", "Cohort Comparisons", "grouped", "a_sicf"),
-    GraphEntry("grouped__t_sicf", "T-SICF Grouped", "Cohort Comparisons", "grouped", "t_sicf"),
-    GraphEntry("grouped__csp", "CSP Grouped", "Cohort Comparisons", "grouped", "csp", multi_figure=True),
-    # Sex-Matched Comparisons
-    GraphEntry("grouped_sex__t_sici", "T-SICI Sex-Matched", "Sex-Matched Comparisons", "grouped", "t_sici", match_by="sex"),
-    GraphEntry("grouped_sex__a_sici", "A-SICI Sex-Matched", "Sex-Matched Comparisons", "grouped", "a_sici", match_by="sex"),
-    GraphEntry("grouped_sex__a_sicf", "A-SICF Sex-Matched", "Sex-Matched Comparisons", "grouped", "a_sicf", match_by="sex"),
-    GraphEntry("grouped_sex__t_sicf", "T-SICF Sex-Matched", "Sex-Matched Comparisons", "grouped", "t_sicf", match_by="sex"),
-    GraphEntry("grouped_sex__csp", "CSP Sex-Matched", "Sex-Matched Comparisons", "grouped", "csp", multi_figure=True, match_by="sex"),
-    # Age-Matched Comparisons
     GraphEntry("grouped_age__t_sici", "T-SICI Age-Matched", "Age-Matched Comparisons", "grouped", "t_sici", match_by="age"),
-    GraphEntry("grouped_age__a_sici", "A-SICI Age-Matched", "Age-Matched Comparisons", "grouped", "a_sici", match_by="age"),
-    GraphEntry("grouped_age__a_sicf", "A-SICF Age-Matched", "Age-Matched Comparisons", "grouped", "a_sicf", match_by="age"),
-    GraphEntry("grouped_age__t_sicf", "T-SICF Age-Matched", "Age-Matched Comparisons", "grouped", "t_sicf", match_by="age"),
-    GraphEntry("grouped_age__csp", "CSP Age-Matched", "Age-Matched Comparisons", "grouped", "csp", multi_figure=True, match_by="age"),
-    # Sex & Age Matched Comparisons
+    GraphEntry("grouped_sex__t_sici", "T-SICI Sex-Matched", "Sex-Matched Comparisons", "grouped", "t_sici", match_by="sex"),
     GraphEntry("grouped_sex_age__t_sici", "T-SICI Sex & Age", "Sex & Age Matched", "grouped", "t_sici", match_by="sex,age"),
-    GraphEntry("grouped_sex_age__a_sici", "A-SICI Sex & Age", "Sex & Age Matched", "grouped", "a_sici", match_by="sex,age"),
-    GraphEntry("grouped_sex_age__a_sicf", "A-SICF Sex & Age", "Sex & Age Matched", "grouped", "a_sicf", match_by="sex,age"),
-    GraphEntry("grouped_sex_age__t_sicf", "T-SICF Sex & Age", "Sex & Age Matched", "grouped", "t_sicf", match_by="sex,age"),
-    GraphEntry("grouped_sex_age__csp", "CSP Sex & Age", "Sex & Age Matched", "grouped", "csp", multi_figure=True, match_by="sex,age"),
-    # Over Time
     GraphEntry("over_time__t_sici", "T-SICI Over Time", "Over Time", "over_time", "t_sici"),
-    GraphEntry("over_time__a_sici", "A-SICI Over Time", "Over Time", "over_time", "a_sici"),
-    GraphEntry("over_time__a_sicf", "A-SICF Over Time", "Over Time", "over_time", "a_sicf"),
-    GraphEntry("over_time__t_sicf", "T-SICF Over Time", "Over Time", "over_time", "t_sicf"),
-    GraphEntry("over_time__csp", "CSP Over Time", "Over Time", "over_time", "csp", multi_figure=True),
-    # Visit Profiles
     GraphEntry("visit_profiles__t_sici", "T-SICI Visit Profiles", "Visit Profiles", "visit_profiles", "t_sici"),
-    GraphEntry("visit_profiles__a_sici", "A-SICI Visit Profiles", "Visit Profiles", "visit_profiles", "a_sici"),
-    GraphEntry("visit_profiles__a_sicf", "A-SICF Visit Profiles", "Visit Profiles", "visit_profiles", "a_sicf"),
-    GraphEntry("visit_profiles__t_sicf", "T-SICF Visit Profiles", "Visit Profiles", "visit_profiles", "t_sicf"),
-    GraphEntry("visit_profiles__csp", "CSP Visit Profiles", "Visit Profiles", "visit_profiles", "csp", multi_figure=True),
-    # RMT
+    # RMT cluster
     GraphEntry("rmt_over_time", "RMT Over Time", "RMT", "rmt_over_time", None, multi_figure=True),
     GraphEntry("rmt_comparison", "RMT Comparison", "RMT", "rmt_comparison", None, multi_figure=True),
     GraphEntry("rmt_grouped", "RMT Grouped", "RMT", "rmt_grouped", None, multi_figure=True),
-    GraphEntry("rmt_sex", "RMT Sex-Matched", "RMT", "rmt_grouped", None, multi_figure=True, match_by="sex"),
     GraphEntry("rmt_age", "RMT Age-Matched", "RMT", "rmt_grouped", None, multi_figure=True, match_by="age"),
+    GraphEntry("rmt_sex", "RMT Sex-Matched", "RMT", "rmt_grouped", None, multi_figure=True, match_by="sex"),
     GraphEntry("rmt_sex_age", "RMT Sex & Age", "RMT", "rmt_grouped", None, multi_figure=True, match_by="sex,age"),
+    # A-SICI cluster
+    GraphEntry("profile__a_sici", "A-SICI Profile", "Waveform Profiles", "profile", "a_sici"),
+    GraphEntry("grouped__a_sici", "A-SICI Grouped", "Cohort Comparisons", "grouped", "a_sici"),
+    GraphEntry("grouped_age__a_sici", "A-SICI Age-Matched", "Age-Matched Comparisons", "grouped", "a_sici", match_by="age"),
+    GraphEntry("grouped_sex__a_sici", "A-SICI Sex-Matched", "Sex-Matched Comparisons", "grouped", "a_sici", match_by="sex"),
+    GraphEntry("grouped_sex_age__a_sici", "A-SICI Sex & Age", "Sex & Age Matched", "grouped", "a_sici", match_by="sex,age"),
+    GraphEntry("over_time__a_sici", "A-SICI Over Time", "Over Time", "over_time", "a_sici"),
+    GraphEntry("visit_profiles__a_sici", "A-SICI Visit Profiles", "Visit Profiles", "visit_profiles", "a_sici"),
+    # A-SICF cluster
+    GraphEntry("profile__a_sicf", "A-SICF Profile", "Waveform Profiles", "profile", "a_sicf"),
+    GraphEntry("grouped__a_sicf", "A-SICF Grouped", "Cohort Comparisons", "grouped", "a_sicf"),
+    GraphEntry("grouped_age__a_sicf", "A-SICF Age-Matched", "Age-Matched Comparisons", "grouped", "a_sicf", match_by="age"),
+    GraphEntry("grouped_sex__a_sicf", "A-SICF Sex-Matched", "Sex-Matched Comparisons", "grouped", "a_sicf", match_by="sex"),
+    GraphEntry("grouped_sex_age__a_sicf", "A-SICF Sex & Age", "Sex & Age Matched", "grouped", "a_sicf", match_by="sex,age"),
+    GraphEntry("over_time__a_sicf", "A-SICF Over Time", "Over Time", "over_time", "a_sicf"),
+    GraphEntry("visit_profiles__a_sicf", "A-SICF Visit Profiles", "Visit Profiles", "visit_profiles", "a_sicf"),
+    # T-SICF cluster
+    GraphEntry("profile__t_sicf", "T-SICF Profile", "Waveform Profiles", "profile", "t_sicf"),
+    GraphEntry("grouped__t_sicf", "T-SICF Grouped", "Cohort Comparisons", "grouped", "t_sicf"),
+    GraphEntry("grouped_age__t_sicf", "T-SICF Age-Matched", "Age-Matched Comparisons", "grouped", "t_sicf", match_by="age"),
+    GraphEntry("grouped_sex__t_sicf", "T-SICF Sex-Matched", "Sex-Matched Comparisons", "grouped", "t_sicf", match_by="sex"),
+    GraphEntry("grouped_sex_age__t_sicf", "T-SICF Sex & Age", "Sex & Age Matched", "grouped", "t_sicf", match_by="sex,age"),
+    GraphEntry("over_time__t_sicf", "T-SICF Over Time", "Over Time", "over_time", "t_sicf"),
+    GraphEntry("visit_profiles__t_sicf", "T-SICF Visit Profiles", "Visit Profiles", "visit_profiles", "t_sicf"),
+    # CSP cluster
+    GraphEntry("profile__csp", "CSP Profile", "Waveform Profiles", "profile", "csp"),
+    GraphEntry("grouped__csp", "CSP Grouped", "Cohort Comparisons", "grouped", "csp", multi_figure=True),
+    GraphEntry("grouped_age__csp", "CSP Age-Matched", "Age-Matched Comparisons", "grouped", "csp", multi_figure=True, match_by="age"),
+    GraphEntry("grouped_sex__csp", "CSP Sex-Matched", "Sex-Matched Comparisons", "grouped", "csp", multi_figure=True, match_by="sex"),
+    GraphEntry("grouped_sex_age__csp", "CSP Sex & Age", "Sex & Age Matched", "grouped", "csp", multi_figure=True, match_by="sex,age"),
+    GraphEntry("over_time__csp", "CSP Over Time", "Over Time", "over_time", "csp", multi_figure=True),
+    GraphEntry("visit_profiles__csp", "CSP Visit Profiles", "Visit Profiles", "visit_profiles", "csp", multi_figure=True),
 ]
 
 _REGISTRY_BY_KEY: dict[str, GraphEntry] = {e.key: e for e in GRAPH_REGISTRY}
