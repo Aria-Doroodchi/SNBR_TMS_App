@@ -32,14 +32,20 @@ from parser.mem_parser import (
 # REDCap ISI definitions  (superset of what the parser currently extracts)
 # ---------------------------------------------------------------------------
 
-# SICI protocols use 14 ISIs in REDCap (1.0 … 30.0 ms)
+# SICI protocols use 9 ISIs in the current REDCap template (1.0 … 7.0 ms).
+# The earlier dictionary had 14 ISIs going up to 30 ms — those high-end ISIs
+# were dropped from the form so we no longer emit them.
 REDCAP_SICI_ISI_VALUES = [
-    1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0,
-    7.0, 10.0, 15.0, 20.0, 25.0, 30.0,
+    1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 7.0,
 ]
 
-# SICF protocols use 21 ISIs in REDCap (1.0 … 7.0 ms in 0.3 ms steps)
-REDCAP_SICF_ISI_VALUES = [round(v / 10, 1) for v in range(10, 71, 3)]
+# SICF protocols use 20 ISIs in the current REDCap template — a mix of
+# 0.3-step values (the default 14-ISI protocol) plus extra half-step values
+# (1.5, 2.0, 3.0, 3.5, 5.0) that appear in the new "1-7ms 9 ISIs" protocol.
+REDCAP_SICF_ISI_VALUES = [
+    1.0, 1.3, 1.5, 1.6, 1.9, 2.0, 2.2, 2.5, 2.8, 3.0,
+    3.1, 3.4, 3.5, 3.7, 4.0, 4.3, 4.6, 4.9, 5.0, 7.0,
+]
 
 # ---------------------------------------------------------------------------
 # Helper: convert a numeric ISI to its REDCap field token  (e.g. 1.0 → "1_0")
@@ -144,10 +150,25 @@ def _build_mapping() -> tuple[dict[str, str], list[str]]:
     rename["A_SICI_isi_n"] = "a_sici_1000_isi_n"
     rename["A_SICF_isi_n"] = "a_sicf_isi_n"
 
+    # -- TMS coil (string in internal schema, mapped to int by exporter) --
+    rename["TMS_coil"] = "tms_coil"
+
     return rename, redcap_only
 
 
 _RENAME_MAP, _REDCAP_ONLY_COLS = _build_mapping()
+
+# Completion gates have no internal counterpart — the exporter computes them
+# on the fly. Surface them as REDCap-only columns so the shared-column join
+# in the exporter (py_rc ∩ rc_df) keeps them in scope.
+_REDCAP_COMPLETION_COL_NAMES = (
+    "tsicip_completion",
+    "tsicfp_completion",
+    "asici1000_completion",
+    "asicf_completion",
+    "csp_completion",
+)
+_REDCAP_ONLY_COLS = list(_REDCAP_ONLY_COLS) + list(_REDCAP_COMPLETION_COL_NAMES)
 
 # Columns that exist internally but are NOT exported to REDCap
 _INTERNAL_ONLY_COLUMNS = (
@@ -160,6 +181,26 @@ _INTERNAL_ONLY_COLUMNS = (
     + ["Study", "Subject_type", "source_file"]
 )
 
+# Completion-gate yesno fields on the tms_values form. REDCap branching
+# logic hides every per-ISI/CSP field unless the matching gate is set to 1.
+REDCAP_COMPLETION_COLS = (
+    "tsicip_completion",
+    "tsicfp_completion",
+    "asici1000_completion",
+    "asicf_completion",
+    "csp_completion",
+)
+
+# Mapping from a completion-gate field name to the REDCap-side prefix(es)
+# whose presence implies that gate should be set to 1.
+REDCAP_COMPLETION_GATE_FOR_PREFIX = {
+    "tsicip_completion": ("t_sici_p_",),
+    "tsicfp_completion": ("t_sicf_p_",),
+    "asici1000_completion": ("a_sici_1000_",),
+    "asicf_completion": ("a_sicf_",),
+    "csp_completion": ("csp_",),
+}
+
 # REDCap radio fields on the tms_values form — option codes are integers and
 # must be written without decimals (REDCap rejects "1.0" for a radio field).
 REDCAP_RADIO_INT_COLS = (
@@ -167,27 +208,38 @@ REDCAP_RADIO_INT_COLS = (
     "t_sicf_p_isi_n",
     "a_sici_1000_isi_n",
     "a_sicf_isi_n",
-)
+    "tms_coil",
+) + REDCAP_COMPLETION_COLS
+
+# Mapping for the TMS coil radio: internal canonical string → REDCap option code.
+TMS_COIL_TO_CODE = {
+    "D70^2": 1,
+    "D70": 2,
+    "DCC": 3,
+}
 
 
 # REDCap TMS value column order (matches the tms_values form layout)
 REDCAP_COLUMN_ORDER = (
-    # RMT
-    ["rmt50", "rmt200", "rmt1000"]
-    # CSP
-    + [f"csp_{level}" for level in CSP_RMT_LEVELS]
-    # T-SICI (ascending ISI order) + ISI-count radio
+    # T-SICI completion + ISI-count radio + per-ISI values
+    ["tsicip_completion", "t_sici_p_isi_n"]
     + [f"t_sici_p_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICI_ISI_VALUES]
-    + ["t_sici_p_isi_n"]
-    # T-SICF (ascending ISI order) + ISI-count radio
-    + [f"t_sicf_p_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICF_ISI_VALUES]
-    + ["t_sicf_p_isi_n"]
-    # A-SICI (ascending ISI order) + ISI-count radio
+    # A-SICI completion + ISI-count radio + per-ISI values
+    + ["asici1000_completion", "a_sici_1000_isi_n"]
     + [f"a_sici_1000_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICI_ISI_VALUES]
-    + ["a_sici_1000_isi_n"]
-    # A-SICF (ascending ISI order) + ISI-count radio
+    # A-SICF completion + ISI-count radio + per-ISI values
+    + ["asicf_completion", "a_sicf_isi_n"]
     + [f"a_sicf_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICF_ISI_VALUES]
-    + ["a_sicf_isi_n"]
+    # T-SICF completion + ISI-count radio + per-ISI values
+    + ["tsicfp_completion", "t_sicf_p_isi_n"]
+    + [f"t_sicf_p_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICF_ISI_VALUES]
+    # CSP completion + per-RMT-level values
+    + ["csp_completion"]
+    + [f"csp_{level}" for level in CSP_RMT_LEVELS]
+    # RMT (no completion gate)
+    + ["rmt50", "rmt200", "rmt1000"]
+    # Coil
+    + ["tms_coil"]
 )
 
 # Metadata columns to carry forward (renamed for REDCap conventions)
@@ -252,6 +304,13 @@ def to_redcap_dataframe(
     if include_metadata:
         meta_rename = {k: v for k, v in _METADATA_RENAME.items() if k in out.columns}
         out = out.rename(columns=meta_rename)
+
+    # 4b. Map tms_coil string labels to REDCap radio option codes (1/2/3).
+    if "tms_coil" in out.columns:
+        out["tms_coil"] = out["tms_coil"].map(
+            lambda v: TMS_COIL_TO_CODE.get(v) if isinstance(v, str) else
+            (v if pd.notna(v) else np.nan)
+        )
 
     # 5. Build final column order
     if include_metadata:

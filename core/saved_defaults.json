@@ -7,5 +7,8 @@
   "email_subject": "SNBR TMS Report",
   "email_body": "Hello,\n\nPlease find attached the SNBR TMS report.",
   "email_remember_password": "1",
-  "export_pdf_path": "C:/Users/Ali D/Desktop/sample_report/2.pdf"
+  "export_pdf_path": "C:/Users/Ali D/Desktop/sample_report/2.pdf",
+  "mem_dir": "X:/Merged/MEM Data",
+  "csp_dir": "Y:/Merged Data/MEM Data/CSP",
+  "cmap_dir": "Y:/Merged Data/Viking"
 }

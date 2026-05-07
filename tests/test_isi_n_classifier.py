@@ -71,14 +71,31 @@ def test_tsicf_none_when_no_data():
     assert _classify_tsicf_isi_n(initialize_record()) is None
 
 
-def test_tsicf_twenty_one_isi():
-    record = _record_with("T_SICF", TSICF_ISIS)  # all 21
-    assert _classify_tsicf_isi_n(record) == 21
+def test_tsicf_fourteen_isi_protocol():
+    # 14 ISIs at 1.0..4.9 by 0.3 → option 1 (matches the new template scheme)
+    isis_14 = [isi for isi in TSICF_ISIS if float(isi.rstrip("ms")) <= 4.9]
+    assert len(isis_14) == 14
+    record = _record_with("T_SICF", isis_14)
+    assert _classify_tsicf_isi_n(record) == 1
 
 
-def test_tsicf_nine_isi():
-    record = _record_with("T_SICF", TSICF_ISIS[:9])
-    assert _classify_tsicf_isi_n(record) == 9
+def test_tsicf_nine_isi_low_range():
+    # 9 ISIs spanning 1.0..3.4 → option 2
+    isis_9 = [isi for isi in TSICF_ISIS if float(isi.rstrip("ms")) <= 3.4]
+    assert len(isis_9) == 9
+    record = _record_with("T_SICF", isis_9)
+    assert _classify_tsicf_isi_n(record) == 2
+
+
+def test_tsicf_nine_isi_mid_range():
+    # 9 ISIs spanning 2.5..4.9 → option 3
+    isis_9 = [
+        isi for isi in TSICF_ISIS
+        if 2.5 <= float(isi.rstrip("ms")) <= 4.9
+    ]
+    assert len(isis_9) == 9
+    record = _record_with("T_SICF", isis_9)
+    assert _classify_tsicf_isi_n(record) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -89,11 +106,27 @@ def test_asici_none_when_no_data():
     assert _classify_asici_isi_n(initialize_record()) is None
 
 
-def test_asici_defaults_to_1_when_data_present():
+def test_asici_six_isi_default_protocol():
+    # New template gives a_sici_1000_isi_n the same options as t_sici_p_isi_n
+    # (1=3 ISIs, 2=6 ISIs, 3=9 ISIs).
     record = _record_with(
         "A_SICI", ["1.0ms", "1.5ms", "2.0ms", "2.5ms", "3.0ms", "3.5ms"]
     )
+    assert _classify_asici_isi_n(record) == 2
+
+
+def test_asici_three_isi_short_protocol():
+    record = _record_with("A_SICI", ["1.0ms", "2.5ms", "3.0ms"])
     assert _classify_asici_isi_n(record) == 1
+
+
+def test_asici_nine_isi_extended_protocol():
+    record = _record_with(
+        "A_SICI",
+        ["1.0ms", "1.5ms", "2.0ms", "2.5ms", "3.0ms", "3.5ms",
+         "4.0ms", "5.0ms", "7.0ms"],
+    )
+    assert _classify_asici_isi_n(record) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -374,6 +407,132 @@ def test_xlsx_change_report_highlights_changed_and_new_cells(tmp_path):
     assert new_cell.fill.fgColor.rgb.endswith("C6EFCE")
     assert str(new_cell.value) == "2"
     assert new_cell.font.bold is True
+
+
+def test_obsolete_high_end_sici_isis_dropped_from_column_order():
+    """The new template removed t_sici_p_*_ms / a_sici_1000_*_ms ISIs above 7ms."""
+    from processing.redcap_mapper import REDCAP_COLUMN_ORDER
+
+    for token in ("10_0", "15_0", "20_0", "25_0", "30_0"):
+        assert f"t_sici_p_{token}_ms" not in REDCAP_COLUMN_ORDER
+        assert f"a_sici_1000_{token}_ms" not in REDCAP_COLUMN_ORDER
+
+
+def test_tms_coil_extracted_and_mapped_to_radio_code(tmp_path):
+    """A 'TMS Coil:\\tMagStim D70^2' header line yields tms_coil = 1 in REDCap."""
+    from parser.mem_parser import _extract_tms_coil
+
+    assert _extract_tms_coil("TMS Coil:\tMagStim D70^2") == "D70^2"
+    assert _extract_tms_coil("TMS Coil:\tMagStim D70") == "D70"
+    assert _extract_tms_coil("TMS Coil:\tDCC") == "DCC"
+    assert _extract_tms_coil("TMS Coil:\tunknown brand") is None
+
+    # End-to-end: internal "D70^2" string maps to REDCap option code 1.
+    record = initialize_record()
+    record["ID"] = 1
+    record["TMS_coil"] = "D70^2"
+    df = pd.DataFrame([record])
+    rc = to_redcap_dataframe(df)
+    assert rc["tms_coil"].iloc[0] == 1
+
+
+def test_completion_gate_emitted_when_protocol_has_value(tmp_path):
+    """Auto-set tsicip_completion=1 when a t_sici_p_* value is emitted."""
+    import csv as _csv
+    from reports.redcap_exporter import generate_redcap_import
+
+    record = _record_with(
+        "T_SICI", ["1.0ms", "1.5ms", "2ms", "2.5ms", "3.0ms", "3.5ms"]
+    )
+    record["Study"] = "SNBR"
+    record["ID"] = 1
+    record["Date"] = "15/04/2026"
+    record["Stimulated_cortex"] = "L"
+    record["source_file"] = "SNBR-001-TP1C50415A.MEM"
+    _assign_isi_counts(record)
+    py_df = pd.DataFrame([record])
+
+    rc_export = tmp_path / "rc_export.csv"
+    with open(rc_export, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow([
+            "record_id", "redcap_event_name", "tt_test_date", "cortex",
+            "t_sici_p_1_0_ms", "t_sici_p_isi_n", "tsicip_completion",
+        ])
+        # tsicip_completion blank → exporter should set it to 1.
+        w.writerow(["1", "visit_1_arm_1", "2026-04-15", "1", "", "", ""])
+
+    dict_csv = tmp_path / "dict.csv"
+    with open(dict_csv, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow(["Variable / Field Name", "Form Name"])
+        for col in ("t_sici_p_1_0_ms", "t_sici_p_isi_n", "tsicip_completion"):
+            w.writerow([col, "tms_values"])
+
+    template_csv = tmp_path / "template.csv"
+    with open(template_csv, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow([
+            "record_id", "redcap_event_name",
+            "t_sici_p_1_0_ms", "t_sici_p_isi_n", "tsicip_completion",
+        ])
+
+    import_df, _, _ = generate_redcap_import(
+        py_df, rc_export, dict_csv, template_csv, tmp_path,
+    )
+
+    assert "tsicip_completion" in import_df.columns
+    assert int(import_df["tsicip_completion"].iloc[0]) == 1
+
+
+def test_completion_gate_skipped_when_already_set_in_redcap(tmp_path):
+    """Don't re-emit tsicip_completion=1 if REDCap already has it set."""
+    import csv as _csv
+    from reports.redcap_exporter import generate_redcap_import
+
+    record = _record_with(
+        "T_SICI", ["1.0ms", "1.5ms", "2ms", "2.5ms", "3.0ms", "3.5ms"]
+    )
+    record["Study"] = "SNBR"
+    record["ID"] = 1
+    record["Date"] = "15/04/2026"
+    record["Stimulated_cortex"] = "L"
+    record["source_file"] = "SNBR-001-TP1C50415A.MEM"
+    _assign_isi_counts(record)
+    record["T_SICI_1.0ms"] = 75.0  # force at least one cell to change
+    py_df = pd.DataFrame([record])
+
+    rc_export = tmp_path / "rc_export.csv"
+    with open(rc_export, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow([
+            "record_id", "redcap_event_name", "tt_test_date", "cortex",
+            "t_sici_p_1_0_ms", "t_sici_p_isi_n", "tsicip_completion",
+        ])
+        w.writerow(["1", "visit_1_arm_1", "2026-04-15", "1", "80", "2", "1"])
+
+    dict_csv = tmp_path / "dict.csv"
+    with open(dict_csv, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow(["Variable / Field Name", "Form Name"])
+        for col in ("t_sici_p_1_0_ms", "t_sici_p_isi_n", "tsicip_completion"):
+            w.writerow([col, "tms_values"])
+
+    template_csv = tmp_path / "template.csv"
+    with open(template_csv, "w", newline="", encoding="utf-8") as f:
+        w = _csv.writer(f)
+        w.writerow([
+            "record_id", "redcap_event_name",
+            "t_sici_p_1_0_ms", "t_sici_p_isi_n", "tsicip_completion",
+        ])
+
+    import_df, _, _ = generate_redcap_import(
+        py_df, rc_export, dict_csv, template_csv, tmp_path,
+    )
+
+    # tsicip_completion shouldn't be in the row at all (already 1 in REDCap).
+    if "tsicip_completion" in import_df.columns:
+        assert pd.isna(import_df["tsicip_completion"].iloc[0])
 
 
 def test_redcap_dataframe_emits_isi_n_columns():

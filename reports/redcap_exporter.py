@@ -25,6 +25,8 @@ import pandas as pd
 
 from processing.redcap_mapper import (
     REDCAP_COLUMN_ORDER,
+    REDCAP_COMPLETION_COLS,
+    REDCAP_COMPLETION_GATE_FOR_PREFIX,
     REDCAP_RADIO_INT_COLS,
     to_redcap_dataframe,
 )
@@ -418,6 +420,10 @@ def generate_redcap_import(
         changed: dict[str, float | int | str] = {}
         old_vals: dict[str, float | int | None] = {}
         for col in shared_tms_cols:
+            # Skip the completion gates here — they're set after the per-value
+            # diff loop based on which protocols actually contributed values.
+            if col in REDCAP_COMPLETION_COLS:
+                continue
             py_val = py_row.get(col)
             rc_val = rc_row.get(col) if rc_row is not None else None
             py_has = _is_valid_number(py_val)
@@ -442,6 +448,34 @@ def generate_redcap_import(
                     stats["per_column"].get(col, 0) + 1
                 )
                 stats["cells_filled"] += 1
+
+        # Auto-set completion gates for any protocol that contributed a value.
+        # Without this REDCap branching logic hides the imported per-ISI/CSP
+        # values until a user manually flips the gate.
+        for gate_col, prefixes in REDCAP_COMPLETION_GATE_FOR_PREFIX.items():
+            contributed = any(
+                col != gate_col
+                and col not in REDCAP_COMPLETION_COLS
+                and any(col.startswith(p) for p in prefixes)
+                for col in changed
+            )
+            if not contributed:
+                continue
+            # If the existing REDCap row already has the gate set to 1, skip.
+            rc_gate = rc_row.get(gate_col) if rc_row is not None else None
+            if _is_valid_number(rc_gate) and int(round(float(rc_gate))) == 1:
+                continue
+            changed[gate_col] = 1
+            old_vals[gate_col] = (
+                int(round(float(rc_gate))) if _is_valid_number(rc_gate) else None
+            )
+            stats["per_column"][gate_col] = (
+                stats["per_column"].get(gate_col, 0) + 1
+            )
+            if old_vals[gate_col] is None:
+                stats["cells_filled"] += 1
+            else:
+                stats["cells_changed"] += 1
 
         if changed:
             row = {"record_id": int(pid), "redcap_event_name": event_name}

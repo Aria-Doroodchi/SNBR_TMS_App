@@ -69,6 +69,7 @@ def output_column_order() -> list[str]:
         + [f"A_SICI_{isi}" for isi in A_SICI_ISIS] + ["A_SICI_avg"]
         + [f"A_SICF_{isi}" for isi in ASICF_ISIS] + ["A_SICF_avg"]
         + ["T_SICI_isi_n", "T_SICF_isi_n", "A_SICI_isi_n", "A_SICF_isi_n"]
+        + ["TMS_coil"]
         + ["CMAP_table", "MUNIX_table", "source_file"]
     )
 
@@ -98,6 +99,7 @@ def initialize_record() -> dict:
         "T_SICF_isi_n": None,
         "A_SICI_isi_n": None,
         "A_SICF_isi_n": None,
+        "TMS_coil": None,
     }
     for isi in TSICI_ISIS:
         record[f"T_SICI_{isi}"] = None
@@ -196,6 +198,27 @@ def _extract_stimulated_cortex(stripped: str) -> str | None:
     return None
 
 
+def _extract_tms_coil(stripped: str) -> str | None:
+    """Extract the TMS coil model from a 'TMS Coil:' header line.
+
+    The MEM file encodes it like ``TMS Coil:\tMagStim D70^2``.  We return one
+    of the canonical labels ``"D70^2"``, ``"D70"``, or ``"DCC"`` so that
+    downstream code can map the string to a REDCap radio option code.
+    """
+    match = re.search(r"TMS Coil:\s*(.+?)\s*$", stripped)
+    if not match:
+        return None
+    text = match.group(1).strip()
+    # Order matters: D70^2 must be checked before D70.
+    if "D70^2" in text:
+        return "D70^2"
+    if re.search(r"\bD70\b", text):
+        return "D70"
+    if "DCC" in text.upper():
+        return "DCC"
+    return None
+
+
 _HEADER_PARSERS: dict[str, tuple[str, Callable] | Callable] = {
     "Name:": lambda s: _extract_study_and_id(s),  # returns (study, id) — special-cased
     "Date:": ("Date", _extract_date),
@@ -203,6 +226,7 @@ _HEADER_PARSERS: dict[str, tuple[str, Callable] | Callable] = {
     "Sex:": ("Sex", lambda s: _extract_match(r"Sex:\s+([MF])", s)),
     "Subject type:": ("Subject_type", _extract_subject_type),
     "Stim/record:": ("Stimulated_cortex", _extract_stimulated_cortex),
+    "TMS Coil:": ("TMS_coil", _extract_tms_coil),
 }
 
 
@@ -364,39 +388,15 @@ def _classify_tsici_isi_n(record: dict) -> int | None:
     return 3
 
 
-def _classify_tsicf_isi_n(record: dict) -> int | None:
-    """REDCap t_sicf_p_isi_n option: code equals the ISI count (3, 6, 9, or 21)."""
-    present = _present_isi_floats(record, "T_SICF", TSICF_ISIS)
-    if not present:
-        return None
-    count = len(present)
-    # Snap to nearest valid option (3, 6, 9, 21)
-    for valid in (3, 6, 9, 21):
-        if count == valid:
-            return valid
-    # Fallback: nearest valid count
-    if count <= 4:
-        return 3
-    if count <= 7:
-        return 6
-    if count <= 15:
-        return 9
-    return 21
+def _classify_sicf_protocol_shape(present: list[float]) -> int | None:
+    """Shared classifier body for both t_sicf_p_isi_n and a_sicf_isi_n.
 
-
-def _classify_asici_isi_n(record: dict) -> int | None:
-    """REDCap a_sici_1000_isi_n: dictionary only defines 6-ISI options; default to 1."""
-    present = _present_isi_floats(record, "A_SICI", A_SICI_ISIS)
-    if not present:
-        return None
-    return 1
-
-
-def _classify_asicf_isi_n(record: dict) -> int | None:
-    """REDCap a_sicf_isi_n option:
-    1=14 ISIs 1.0-4.9ms · 2=9 ISIs 1.0-3.4ms · 3=9 ISIs 2.5-4.9ms · 4=9 ISIs 1.0-7.0ms.
+    Both REDCap radios use the same option codes:
+      * 1 = 14 ISIs 1.0-4.9 ms by 0.3
+      * 2 = 9 ISIs 1.0-3.4 ms by 0.3
+      * 3 = 9 ISIs 2.5-4.9 ms by 0.3
+      * 4 = 9 ISIs 1.0-7.0 ms (mixed steps: 1.0, 1.5, 2.0, 2.5, 3.0, 3.5, 4.0, 5.0, 7.0)
     """
-    present = _present_isi_floats(record, "A_SICF", ASICF_ISIS)
     if not present:
         return None
     count = len(present)
@@ -404,13 +404,13 @@ def _classify_asicf_isi_n(record: dict) -> int | None:
     if count >= 14 and hi <= 4.9:
         return 1
     if count == 9:
+        if hi >= 7.0:
+            return 4
         if lo >= 2.5 and hi <= 4.9:
             return 3
         if hi <= 3.4:
             return 2
-        if hi >= 7.0:
-            return 4
-    # Fallback by count
+    # Fallback by count / range
     if count >= 14:
         return 1
     if hi >= 7.0:
@@ -418,6 +418,39 @@ def _classify_asicf_isi_n(record: dict) -> int | None:
     if lo >= 2.5:
         return 3
     return 2
+
+
+def _classify_tsicf_isi_n(record: dict) -> int | None:
+    """REDCap t_sicf_p_isi_n option: 1/2/3/4 (see _classify_sicf_protocol_shape)."""
+    return _classify_sicf_protocol_shape(
+        _present_isi_floats(record, "T_SICF", TSICF_ISIS)
+    )
+
+
+def _classify_asici_isi_n(record: dict) -> int | None:
+    """REDCap a_sici_1000_isi_n: same 1/2/3 options as t_sici_p_isi_n."""
+    present = _present_isi_floats(record, "A_SICI", A_SICI_ISIS)
+    if not present:
+        return None
+    count = len(present)
+    if count >= 9 or max(present) >= 7.0:
+        return 3
+    if count == 3 and set(present) == {1.0, 2.5, 3.0}:
+        return 1
+    if count == 6 and max(present) <= 3.5:
+        return 2
+    if count <= 3:
+        return 1
+    if count <= 6:
+        return 2
+    return 3
+
+
+def _classify_asicf_isi_n(record: dict) -> int | None:
+    """REDCap a_sicf_isi_n option: 1/2/3/4 (see _classify_sicf_protocol_shape)."""
+    return _classify_sicf_protocol_shape(
+        _present_isi_floats(record, "A_SICF", ASICF_ISIS)
+    )
 
 
 def _assign_isi_counts(record: dict) -> None:
