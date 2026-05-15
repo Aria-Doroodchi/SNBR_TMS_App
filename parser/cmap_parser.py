@@ -25,6 +25,8 @@ import warnings
 from datetime import datetime
 from pathlib import Path
 
+from parser.mem_parser import iter_files, normalize_dirs
+
 _STUDY_ID_PATTERN = re.compile(r"([A-Za-z]+)\d*-0*(\d+)", flags=re.IGNORECASE)
 _VISIT_DATE_PATTERN = re.compile(r"Visit Date:\s*([0-9A-Za-z/:\-\s]+?)\s*$", re.IGNORECASE)
 
@@ -351,20 +353,20 @@ def parse_cmap_file(filepath: str | Path) -> dict:
     }
 
 
-def parse_cmap_directory(input_dir: str | Path) -> list[dict]:
+def parse_cmap_directory(
+    input_dir: str | Path | list[str | Path] | None,
+) -> list[dict]:
     """Parse every .pdf/.docx file in *input_dir* (recursive) and return records.
 
-    Files that yield no usable rows are silently skipped. Temporary Word lock
+    *input_dir* may be a single directory or a list of directories.  Files
+    that yield no usable rows are silently skipped. Temporary Word lock
     files (``~$...docx``) are ignored.
     """
-    root = Path(input_dir)
-    if not root.is_dir():
+    if not normalize_dirs(input_dir):
         return []
 
     records: list[dict] = []
-    for path in sorted(root.rglob("*")):
-        if not path.is_file():
-            continue
+    for path in iter_files(input_dir, "*"):
         if path.name.startswith("~$"):
             continue
         if path.suffix.lower() not in {".pdf", ".docx"}:

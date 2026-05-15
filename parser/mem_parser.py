@@ -190,7 +190,9 @@ def _extract_subject_type(stripped: str) -> str | None:
 
 
 def _extract_stimulated_cortex(stripped: str) -> str | None:
-    match = re.search(r"Stim/record:\s*(.*?)\s*->", stripped)
+    # The colon after "Stim/record" is absent in ~44% of files (older Qtrac
+    # export format), so it must be optional here.
+    match = re.search(r"Stim/record:?\s*(.*?)\s*->", stripped)
     if match:
         cortex = match.group(1).strip()
         if cortex:
@@ -225,7 +227,7 @@ _HEADER_PARSERS: dict[str, tuple[str, Callable] | Callable] = {
     "Age:": ("Age", lambda s: _extract_int(r"Age:\s+(\d+)", s)),
     "Sex:": ("Sex", lambda s: _extract_match(r"Sex:\s+([MF])", s)),
     "Subject type:": ("Subject_type", _extract_subject_type),
-    "Stim/record:": ("Stimulated_cortex", _extract_stimulated_cortex),
+    "Stim/record": ("Stimulated_cortex", _extract_stimulated_cortex),
     "TMS Coil:": ("TMS_coil", _extract_tms_coil),
 }
 
@@ -545,18 +547,110 @@ def parse_mem_file(filepath: str | Path) -> dict:
     return record
 
 
-def parse_mem_directory(input_dir: str | Path) -> list[dict]:
-    """Parse all .MEM files in *input_dir* and return a list of record dicts.
+def normalize_dirs(value) -> list[Path]:
+    """Normalise a directory argument to a flat list of ``Path``.
 
-    Each dict has a ``source_file`` key set to the filename (stem + extension).
+    Accepts ``None``, a single ``str``/``Path``, or any (possibly nested)
+    iterable of them, so callers can let the user pick files from several
+    locations.  Empty/blank entries are dropped.
     """
-    input_folder = Path(input_dir)
-    if not input_folder.exists():
-        raise FileNotFoundError(f"Input folder does not exist: {input_folder}")
+    if value is None:
+        return []
+    if isinstance(value, (str, Path)):
+        return [Path(value)] if str(value).strip() else []
+    result: list[Path] = []
+    for v in value:
+        result.extend(normalize_dirs(v))
+    return result
 
-    mem_files = sorted(input_folder.glob("*.MEM"))
+
+def iter_files(
+    input_dir: str | Path | list[str | Path] | None,
+    pattern: str = "*.MEM",
+) -> list[Path]:
+    """Recursively list files matching *pattern* across one or more dirs.
+
+    *input_dir* may be a single directory or a (possibly nested) list of
+    directories, so callers can collect files stored in several locations.
+    Results are de-duplicated by resolved path (overlapping/parent+child
+    selections are not returned twice) and missing directories are skipped.
+    """
+    files: list[Path] = []
+    seen: set[Path] = set()
+    for root in normalize_dirs(input_dir):
+        if not root.is_dir():
+            continue
+        for path in sorted(root.rglob(pattern)):
+            if not path.is_file():
+                continue
+            try:
+                resolved = path.resolve()
+            except OSError:
+                resolved = path
+            if resolved in seen:
+                continue
+            seen.add(resolved)
+            files.append(path)
+    return sorted(files, key=lambda p: str(p))
+
+
+def iter_mem_files(
+    input_dir: str | Path | list[str | Path] | None,
+    exclude_dirs: list[str | Path | None] | None = None,
+) -> list[Path]:
+    """Return every ``*.MEM`` path under *input_dir*, searched recursively.
+
+    *input_dir* may be a single directory or a list of directories — files
+    are collected from all of them so the user can pull MEM files stored in
+    different locations.  Selecting a folder parses every .MEM file beneath
+    it, including those in subfolders.  Files are de-duplicated by resolved
+    path (overlapping selections won't be parsed twice), and any file inside
+    one of *exclude_dirs* is skipped — used to keep the CSP directory (a
+    subfolder of the MEM directory in typical lab layouts) out of the MEM
+    parse, since CSP files use a different format handled by ``CSP_parser``.
+    """
+    mem_files = iter_files(input_dir, "*.MEM")
+
+    excluded: list[Path] = []
+    for d in normalize_dirs(exclude_dirs):
+        try:
+            excluded.append(d.resolve())
+        except OSError:
+            excluded.append(d)
+    if not excluded:
+        return mem_files
+
+    kept: list[Path] = []
+    for path in mem_files:
+        try:
+            resolved = path.resolve()
+        except OSError:
+            resolved = path
+        if any(resolved == ex or ex in resolved.parents for ex in excluded):
+            continue
+        kept.append(path)
+    return kept
+
+
+def parse_mem_directory(
+    input_dir: str | Path | list[str | Path] | None,
+    exclude_dirs: list[str | Path | None] | None = None,
+) -> list[dict]:
+    """Parse all .MEM files under *input_dir* (recursively) and return record dicts.
+
+    *input_dir* may be a single directory or a list of directories.
+    Subfolders are searched too.  Each dict has a ``source_file`` key set to
+    the filename (stem + extension).  Pass *exclude_dirs* to skip subtrees
+    such as the CSP directory.
+    """
+    roots = normalize_dirs(input_dir)
+    if not roots:
+        raise FileNotFoundError("No MEM directory was provided")
+
+    mem_files = iter_mem_files(roots, exclude_dirs)
     if not mem_files:
-        raise FileNotFoundError(f"No .MEM files found in {input_folder}")
+        shown = ", ".join(str(r) for r in roots)
+        raise FileNotFoundError(f"No .MEM files found in: {shown}")
 
     records: list[dict] = []
     for filepath in mem_files:

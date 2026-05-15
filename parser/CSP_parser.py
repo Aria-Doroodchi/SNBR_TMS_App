@@ -18,6 +18,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Callable
 
+from parser.mem_parser import iter_files, normalize_dirs
+
 # ---------------------------------------------------------------------------
 # Constants
 # ---------------------------------------------------------------------------
@@ -116,7 +118,9 @@ def _extract_subject_type(stripped: str) -> str | None:
 
 
 def _extract_stimulated_cortex(stripped: str) -> str | None:
-    match = re.search(r"Stim/record:\s*(.*?)\s*->", stripped)
+    # The colon after "Stim/record" is absent in ~44% of files (older Qtrac
+    # export format), so it must be optional here.
+    match = re.search(r"Stim/record:?\s*(.*?)\s*->", stripped)
     if match:
         cortex = match.group(1).strip()
         if cortex:
@@ -130,7 +134,7 @@ _HEADER_PARSERS: dict[str, tuple[str, Callable] | Callable] = {
     "Age:": ("Age", lambda s: _extract_int(r"Age:\s+(\d+)", s)),
     "Sex:": ("Sex", lambda s: _extract_match(r"Sex:\s+([MF])", s)),
     "Subject type:": ("Subject_type", _extract_subject_type),
-    "Stim/record:": ("Stimulated_cortex", _extract_stimulated_cortex),
+    "Stim/record": ("Stimulated_cortex", _extract_stimulated_cortex),
 }
 
 
@@ -243,18 +247,23 @@ def parse_csp_file(filepath: str | Path) -> dict:
     return record
 
 
-def parse_csp_directory(input_dir: str | Path) -> list[dict]:
+def parse_csp_directory(
+    input_dir: str | Path | list[str | Path] | None,
+) -> list[dict]:
     """Parse every CSP .MEM file in *input_dir* and return a list of record dicts.
 
-    Each dict has a ``source_file`` key set to the filename.
+    *input_dir* may be a single directory or a list of directories; each
+    dict has a ``source_file`` key set to the filename.  Subfolders are
+    searched recursively so selecting a folder also parses its subfolders.
     """
-    input_folder = Path(input_dir)
-    if not input_folder.exists():
-        raise FileNotFoundError(f"CSP input folder does not exist: {input_folder}")
+    roots = normalize_dirs(input_dir)
+    if not roots:
+        raise FileNotFoundError("No CSP directory was provided")
 
-    mem_files = sorted(input_folder.glob("*.MEM"))
+    mem_files = iter_files(roots, "*.MEM")
     if not mem_files:
-        raise FileNotFoundError(f"No CSP .MEM files found in {input_folder}")
+        shown = ", ".join(str(r) for r in roots)
+        raise FileNotFoundError(f"No CSP .MEM files found in: {shown}")
 
     records: list[dict] = []
     for filepath in mem_files:

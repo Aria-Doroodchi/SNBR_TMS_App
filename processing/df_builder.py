@@ -38,6 +38,9 @@ from parser.mem_parser import (
     CSP_RMT_LEVELS,
     TSICI_ISIS,
     TSICF_ISIS,
+    iter_files,
+    iter_mem_files,
+    normalize_dirs,
     output_column_order,
     parse_mem_file,
     parse_mem_directory,
@@ -74,6 +77,15 @@ CSP_NUMERIC_COLUMNS = (
 ACQUISITION_TOKEN_PATTERN = re.compile(
     r"([A-Z]+(?:\d+C|C)\d+[A-Z])", flags=re.IGNORECASE
 )
+
+SOURCE_FILE_SEPARATOR = "; "
+
+
+def _split_source_files(value) -> list[str]:
+    """Split a (possibly coalesced) source_file cell into its constituent names."""
+    if value is None or (isinstance(value, float) and np.isnan(value)):
+        return []
+    return [n.strip() for n in str(value).split(";") if n.strip()]
 
 
 # ---------------------------------------------------------------------------
@@ -414,15 +426,12 @@ def merge_cmap_into_mem(
 
 
 def _apply_cmap_merge(
-    df: pd.DataFrame, cmap_dir: str | Path | None,
+    df: pd.DataFrame, cmap_dir: str | Path | list[str | Path] | None,
 ) -> pd.DataFrame:
     """Helper — parse CMAP files (if any) and merge into *df*."""
-    if cmap_dir is None:
+    if not normalize_dirs(cmap_dir):
         return df
-    cmap_path = Path(cmap_dir)
-    if not cmap_path.exists():
-        return df
-    records = parse_cmap_directory(cmap_path)
+    records = parse_cmap_directory(cmap_dir)
     if not records:
         return df
     cmap_df = build_cmap_dataframe(records)
@@ -430,15 +439,79 @@ def _apply_cmap_merge(
 
 
 # ---------------------------------------------------------------------------
+# Same-session row coalescing
+# ---------------------------------------------------------------------------
+
+def _coalesce_same_session_rows(df: pd.DataFrame) -> pd.DataFrame:
+    """Collapse rows sharing the same (ID, Date) into a single row.
+
+    Multiple .MEM files for the same participant collected on the same date
+    typically hold complementary measures (e.g. one file carries RMT data,
+    another the T-SICI block). This combines them by taking the first
+    non-null value per column across the group. ``source_file`` is joined
+    with ``SOURCE_FILE_SEPARATOR`` so the provenance of every contributing
+    file is preserved. Rows lacking ID or Date are passed through unchanged.
+    """
+    if df.empty or "ID" not in df.columns or "Date" not in df.columns:
+        return df
+
+    work = df.copy()
+    work["_g_id"] = pd.to_numeric(work["ID"], errors="coerce")
+    work["_g_date"] = work["Date"].astype("string").fillna("").str.strip()
+    groupable = work["_g_id"].notna() & work["_g_date"].ne("")
+    keyed = work[groupable]
+    unkeyed = work[~groupable].drop(columns=["_g_id", "_g_date"])
+
+    if keyed.empty:
+        return unkeyed[df.columns.tolist()].reset_index(drop=True)
+
+    output_cols = [c for c in df.columns if c not in ("_g_id", "_g_date")]
+    combined_rows: list[dict] = []
+    for _, group in keyed.groupby(["_g_id", "_g_date"], sort=False):
+        if len(group) == 1:
+            row = group.iloc[0]
+            combined_rows.append({c: row[c] for c in output_cols})
+            continue
+        out: dict = {}
+        for col in output_cols:
+            if col == "source_file":
+                names: list[str] = []
+                seen: set[str] = set()
+                for v in group[col].tolist():
+                    for n in _split_source_files(v):
+                        if n not in seen:
+                            seen.add(n)
+                            names.append(n)
+                out[col] = SOURCE_FILE_SEPARATOR.join(names) if names else np.nan
+                continue
+            non_null = group[col].dropna()
+            out[col] = non_null.iloc[0] if not non_null.empty else np.nan
+        combined_rows.append(out)
+
+    combined = pd.DataFrame(combined_rows, columns=output_cols)
+    if unkeyed.empty:
+        return combined.reset_index(drop=True)
+    return pd.concat(
+        [combined, unkeyed[output_cols]], ignore_index=True
+    )
+
+
+# ---------------------------------------------------------------------------
 # Loading a previously exported CSV (for incremental builds)
 # ---------------------------------------------------------------------------
 
 def _source_file_set(df: pd.DataFrame) -> set[str]:
-    """Return the set of non-empty source_file values in *df*."""
+    """Return the set of non-empty source filenames in *df*.
+
+    A single ``source_file`` cell may list several filenames joined by
+    ``SOURCE_FILE_SEPARATOR`` (rows coalesced from multiple .MEM files for
+    the same participant/date); this returns every individual filename.
+    """
     if "source_file" not in df.columns:
         return set()
-    names = set(df["source_file"].astype("string").fillna("").str.strip())
-    names.discard("")
+    names: set[str] = set()
+    for value in df["source_file"].tolist():
+        names.update(_split_source_files(value))
     return names
 
 
@@ -480,16 +553,17 @@ def load_existing_csv(csv_path: str | Path) -> pd.DataFrame:
 # ---------------------------------------------------------------------------
 
 def build_combined_dataframe(
-    mem_dir: str | Path,
-    csp_dir: str | Path | None = None,
-    cmap_dir: str | Path | None = None,
+    mem_dir: str | Path | list[str | Path],
+    csp_dir: str | Path | list[str | Path] | None = None,
+    cmap_dir: str | Path | list[str | Path] | None = None,
 ) -> pd.DataFrame:
     """Parse all MEM (and optionally CSP / CMAP) files and return one merged DataFrame.
 
     Parameters
     ----------
-    mem_dir : path
-        Folder containing .MEM files for the main TMS measures.
+    mem_dir : path or list of paths
+        Folder(s) containing .MEM files for the main TMS measures.  When a
+        list is given, files are collected from every folder.
     csp_dir : path, optional
         Folder containing CSP .MEM files.  When ``None``, CSP columns remain
         empty (no merge).
@@ -497,26 +571,24 @@ def build_combined_dataframe(
         Folder containing motor nerve-conduction study .pdf / .docx files.
         When ``None``, the ``CMAP_table`` column is left empty.
     """
-    mem_records = parse_mem_directory(mem_dir)
+    mem_records = parse_mem_directory(mem_dir, exclude_dirs=[csp_dir, cmap_dir])
     mem_df = build_mem_dataframe(mem_records)
 
-    if csp_dir is not None:
-        csp_dir_path = Path(csp_dir)
-        if csp_dir_path.exists() and any(csp_dir_path.glob("*.MEM")):
-            csp_records = parse_csp_directory(csp_dir)
-            csp_df = build_csp_dataframe(csp_records)
-            mem_df = merge_csp_into_mem(mem_df, csp_df)
+    if iter_files(csp_dir, "*.MEM"):
+        csp_records = parse_csp_directory(csp_dir)
+        csp_df = build_csp_dataframe(csp_records)
+        mem_df = merge_csp_into_mem(mem_df, csp_df)
 
     mem_df = _apply_cmap_merge(mem_df, cmap_dir)
 
-    return mem_df
+    return _normalize_mem_dataframe(_coalesce_same_session_rows(mem_df))
 
 
 def build_combined_dataframe_incremental(
-    mem_dir: str | Path,
-    csp_dir: str | Path | None = None,
+    mem_dir: str | Path | list[str | Path],
+    csp_dir: str | Path | list[str | Path] | None = None,
     existing_csv: str | Path | None = None,
-    cmap_dir: str | Path | None = None,
+    cmap_dir: str | Path | list[str | Path] | None = None,
 ) -> pd.DataFrame:
     """Build a DataFrame, only parsing .MEM files not already in *existing_csv*.
 
@@ -533,8 +605,8 @@ def build_combined_dataframe_incremental(
 
     Parameters
     ----------
-    mem_dir : path
-        Folder containing .MEM files.
+    mem_dir : path or list of paths
+        Folder(s) containing .MEM files.  A list collects files from each.
     csp_dir : path, optional
         Folder containing CSP .MEM files.
     existing_csv : path, optional
@@ -551,24 +623,22 @@ def build_combined_dataframe_incremental(
         - ``reused_existing`` : bool
         - ``total_mem_files`` : int
     """
-    mem_path = Path(mem_dir)
-    if not mem_path.exists():
-        raise FileNotFoundError(f"MEM folder does not exist: {mem_path}")
+    mem_roots = normalize_dirs(mem_dir)
+    if not any(r.exists() for r in mem_roots):
+        shown = ", ".join(str(r) for r in mem_roots) or "(none provided)"
+        raise FileNotFoundError(f"MEM folder does not exist: {shown}")
 
-    mem_files = sorted(mem_path.glob("*.MEM"))
+    mem_files = iter_mem_files(mem_roots, exclude_dirs=[csp_dir, cmap_dir])
     if not mem_files:
-        raise FileNotFoundError(f"No .MEM files found in {mem_path}")
+        shown = ", ".join(str(r) for r in mem_roots)
+        raise FileNotFoundError(f"No .MEM files found in: {shown}")
 
     mem_filenames = {f.name for f in mem_files}
 
     # Also list CSP folder contents so CSP-appended rows in the existing CSV
     # aren't mistakenly flagged as orphans below (their source_file is a CSP
     # filename, not a MEM one).
-    csp_filenames: set[str] = set()
-    if csp_dir is not None:
-        csp_path = Path(csp_dir)
-        if csp_path.exists():
-            csp_filenames = {f.name for f in csp_path.glob("*.MEM")}
+    csp_filenames = {f.name for f in iter_files(csp_dir, "*.MEM")}
 
     # ---- Load existing CSV (if any) ----
     if existing_csv is not None and Path(existing_csv).exists():
@@ -596,18 +666,28 @@ def build_combined_dataframe_incremental(
         return result
 
     # ---- Incremental path ----
-    # Keep only rows whose source_file is a current MEM file (drops both
-    # removed-MEM rows and CSP-appended rows; CSP is re-merged below).
+    # Keep only rows whose source files are ALL still present in mem_dir.
+    # A coalesced row (multiple .MEM files joined into one row) is dropped
+    # in full if any of its constituent files is missing — the remaining
+    # files get re-parsed below so the rebuilt row stays consistent.
     if not existing_df.empty:
-        keep_mask = existing_df["source_file"].isin(mem_filenames)
+        def _all_on_disk(value) -> bool:
+            files = _split_source_files(value)
+            return bool(files) and all(n in mem_filenames for n in files)
+
+        keep_mask = existing_df["source_file"].apply(_all_on_disk)
         kept_df = existing_df.loc[keep_mask].copy()
     else:
         kept_df = existing_df.copy()
 
-    # Parse only new files
+    # Re-parse any file not represented in a kept row (covers both genuinely
+    # new files and survivors of a partially-orphaned coalesced row).
+    kept_filenames = _source_file_set(kept_df)
+    files_to_parse = mem_filenames - kept_filenames
+
     new_records: list[dict] = []
     for filepath in mem_files:
-        if filepath.name in new_names:
+        if filepath.name in files_to_parse:
             record = parse_mem_file(filepath)
             record["source_file"] = filepath.name
             new_records.append(record)
@@ -619,16 +699,15 @@ def build_combined_dataframe_incremental(
         combined = kept_df
 
     # ---- Re-merge CSP data ----
-    if csp_dir is not None:
-        csp_path = Path(csp_dir)
-        if csp_path.exists() and any(csp_path.glob("*.MEM")):
-            csp_records = parse_csp_directory(csp_dir)
-            csp_df = build_csp_dataframe(csp_records)
-            combined = merge_csp_into_mem(combined, csp_df)
+    if iter_files(csp_dir, "*.MEM"):
+        csp_records = parse_csp_directory(csp_dir)
+        csp_df = build_csp_dataframe(csp_records)
+        combined = merge_csp_into_mem(combined, csp_df)
 
     # ---- Re-merge CMAP data ----
     combined = _apply_cmap_merge(combined, cmap_dir)
 
+    combined = _coalesce_same_session_rows(_normalize_mem_dataframe(combined))
     combined = _normalize_mem_dataframe(combined)
     combined.attrs["new_files_parsed"] = len(new_names)
     combined.attrs["removed_files_dropped"] = len(orphan_names)
@@ -650,9 +729,12 @@ def participant_mem_files(
     participant_id: int,
     mem_dir: str | Path,
 ) -> set[str]:
-    """Return the set of .MEM filenames in *mem_dir* belonging to *participant_id*."""
+    """Return the set of .MEM filenames in *mem_dir* belonging to *participant_id*.
+
+    Searches subfolders recursively, mirroring the recursive MEM parse.
+    """
     result: set[str] = set()
-    for f in Path(mem_dir).glob("*.MEM"):
+    for f in iter_mem_files(mem_dir):
         m = _PARTICIPANT_FILE_PATTERN.match(f.name)
         if m and int(m.group(1)) == participant_id:
             result.add(f.name)
@@ -677,7 +759,7 @@ def load_participant_dataframe(
     participant_id: int,
     mem_dir: str | Path,
     csv_path: str | Path,
-    csp_dir: str | Path | None = None,
+    csp_dir: str | Path | list[str | Path] | None = None,
     force_rebuild: bool = False,
     export_csv: bool = False,
     output_dir: str | Path | None = None,

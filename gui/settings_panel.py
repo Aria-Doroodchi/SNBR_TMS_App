@@ -97,11 +97,16 @@ class SettingsPanel(ctk.CTkFrame):
         ])
 
         # Import Paths
+        def _fmt(value):
+            if isinstance(value, (list, tuple)):
+                value = "; ".join(str(p) for p in value if str(p).strip())
+            return value or "(not set)"
+
         import_lines = [
-            f"MEM Dir: {defaults.get(KEY_MEM_DIR) or '(not set)'}",
-            f"CSP Dir: {defaults.get(KEY_CSP_DIR) or '(not set)'}",
-            f"CMAP Dir: {defaults.get(KEY_CMAP_DIR) or '(not set)'}",
-            f"CSV File: {defaults.get(KEY_CSV_FILE) or '(not set)'}",
+            f"MEM Dir: {_fmt(defaults.get(KEY_MEM_DIR))}",
+            f"CSP Dir: {_fmt(defaults.get(KEY_CSP_DIR))}",
+            f"CMAP Dir: {_fmt(defaults.get(KEY_CMAP_DIR))}",
+            f"CSV File: {_fmt(defaults.get(KEY_CSV_FILE))}",
         ]
         row = self._add_section(self._scroll, row, "Import Paths", import_lines)
 

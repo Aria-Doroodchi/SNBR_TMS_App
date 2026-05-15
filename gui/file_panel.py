@@ -23,9 +23,6 @@ class FilePanel(ctk.CTkFrame):
         self._on_next = on_next
         self._on_back = on_back
 
-        self._mem_var = ctk.StringVar()
-        self._csp_var = ctk.StringVar()
-        self._cmap_var = ctk.StringVar()
         self._csv_var = ctk.StringVar()
         self._error_var = ctk.StringVar()
 
@@ -34,20 +31,41 @@ class FilePanel(ctk.CTkFrame):
         self._save_cmap = ctk.BooleanVar(value=False)
         self._save_csv = ctk.BooleanVar(value=False)
 
-        self._load_defaults()
+        # Each multi-folder field keeps its own list of {frame, var} rows
+        # and the container frame those rows are gridded into.
+        self._dir_rows: dict[str, list[dict]] = {
+            "mem": [], "csp": [], "cmap": [],
+        }
+        self._dir_lists: dict[str, ctk.CTkFrame] = {}
+
         self._build_ui()
+        self._load_defaults()
 
     def _load_defaults(self):
         """Pre-fill entries from controller defaults."""
         paths = self._controller.get_paths()
-        self._mem_var.set(paths["mem_path"])
-        self._csp_var.set(paths["csp_path"])
-        self._cmap_var.set(paths.get("cmap_path", ""))
+        self._set_dir_paths("mem", paths["mem_path"])
+        self._set_dir_paths("csp", paths["csp_path"])
+        self._set_dir_paths("cmap", paths.get("cmap_path", []))
         self._csv_var.set(paths["csv_path"])
+
+    def _set_dir_paths(self, name: str, value):
+        """Populate a field's folder rows from a list (or legacy single string)."""
+        if isinstance(value, str):
+            paths = [value] if value.strip() else []
+        else:
+            paths = [str(v) for v in (value or []) if str(v).strip()]
+        for row in self._dir_rows[name]:
+            row["frame"].destroy()
+        self._dir_rows[name].clear()
+        if paths:
+            for p in paths:
+                self._add_dir_row(name, p)
+        else:
+            self._add_dir_row(name)
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(1, weight=1)
 
         # ── Title ──────────────────────────────────────────────
         title = ctk.CTkLabel(
@@ -69,28 +87,32 @@ class FilePanel(ctk.CTkFrame):
         fields.grid(row=2, column=0, sticky="nsew", padx=PAD_X)
         fields.grid_columnconfigure(0, weight=1)
 
-        self._add_path_row(
-            fields, row=0,
-            label="MEM Files Directory *",
-            helper="Folder containing .MEM files from Qtrack sessions. (Required)",
-            var=self._mem_var,
+        self._build_dir_section(
+            fields, row=0, name="mem",
+            title="MEM Files Directories *",
+            helper=(
+                "Folders containing .MEM files from Qtrack sessions. Add as "
+                "many as you need — files may be stored in different "
+                "locations. (At least one required)"
+            ),
             save_var=self._save_mem,
         )
-        self._add_path_row(
-            fields, row=1,
-            label="CSP MEM Files Directory",
-            helper="Folder containing CSP-specific .MEM files. (Optional)",
-            var=self._csp_var,
+        self._build_dir_section(
+            fields, row=1, name="csp",
+            title="CSP MEM Files Directories",
+            helper=(
+                "Folders containing CSP-specific .MEM files. Add as many as "
+                "you need. (Optional)"
+            ),
             save_var=self._save_csp,
         )
-        self._add_path_row(
-            fields, row=2,
-            label="CMAP Files Directory",
+        self._build_dir_section(
+            fields, row=2, name="cmap",
+            title="CMAP Files Directories",
             helper=(
-                "Folder containing motor nerve-conduction study .pdf or "
-                ".docx files. (Optional)"
+                "Folders containing motor nerve-conduction study .pdf or "
+                ".docx files. Add as many as you need. (Optional)"
             ),
-            var=self._cmap_var,
             save_var=self._save_cmap,
         )
         self._add_path_row(
@@ -158,6 +180,110 @@ class FilePanel(ctk.CTkFrame):
             command=self._handle_next,
         )
         self._next_btn.grid(row=0, column=1, sticky="e")
+
+    # ── Reusable multi-folder section ──────────────────────
+
+    def _build_dir_section(
+        self, parent, row: int, *, name: str, title: str, helper: str,
+        save_var: ctk.BooleanVar,
+    ):
+        """Build a directory field that accepts multiple folders.
+
+        *name* keys the field's row list / container so MEM, CSP and CMAP
+        can each reuse this same widget without code duplication.
+        """
+        frame = ctk.CTkFrame(parent, fg_color="transparent")
+        frame.grid(row=row, column=0, sticky="ew", pady=(0, SECTION_PAD_Y))
+        frame.grid_columnconfigure(0, weight=1)
+
+        ctk.CTkLabel(
+            frame, text=title, font=FONT_HEADING, anchor="w",
+        ).grid(row=0, column=0, columnspan=2, sticky="w", pady=(0, 2))
+
+        ctk.CTkLabel(
+            frame, text=helper,
+            font=FONT_SUBTITLE, text_color=SUBTITLE_COLOR, anchor="w",
+            wraplength=560, justify="left",
+        ).grid(row=1, column=0, columnspan=2, sticky="w", pady=(0, 4))
+
+        # Plain frame (not scrollable): the whole page already sits in an
+        # outer scroll container, so this just needs to hug its rows — a
+        # fixed-height scrollable frame would leave dead space below them.
+        list_frame = ctk.CTkFrame(frame, fg_color="transparent")
+        list_frame.grid(row=2, column=0, columnspan=2, sticky="ew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        self._dir_lists[name] = list_frame
+
+        controls = ctk.CTkFrame(frame, fg_color="transparent")
+        controls.grid(row=3, column=0, columnspan=2, sticky="ew", pady=(4, 0))
+        controls.grid_columnconfigure(1, weight=1)
+
+        ctk.CTkButton(
+            controls, text="+ Add Folder", width=120, height=ENTRY_HEIGHT,
+            corner_radius=CORNER_RADIUS, font=FONT_SMALL,
+            fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER,
+            command=lambda n=name: self._add_dir_row(n),
+        ).grid(row=0, column=0, sticky="w")
+
+        ctk.CTkCheckBox(
+            controls, text="Save as default", variable=save_var,
+            font=FONT_SMALL,
+        ).grid(row=0, column=2, sticky="e")
+
+    def _add_dir_row(self, name: str, path: str = ""):
+        """Append one folder row (entry + Browse + Remove) to field *name*."""
+        rows = self._dir_rows[name]
+        list_frame = self._dir_lists[name]
+        row_frame = ctk.CTkFrame(list_frame, fg_color="transparent")
+        row_frame.grid(row=len(rows), column=0, sticky="ew", pady=(0, 4))
+        row_frame.grid_columnconfigure(0, weight=1)
+
+        var = ctk.StringVar(value=path)
+        ctk.CTkEntry(
+            row_frame, textvariable=var, height=ENTRY_HEIGHT,
+            corner_radius=CORNER_RADIUS, font=FONT_BODY,
+        ).grid(row=0, column=0, sticky="ew", padx=(0, 8))
+
+        ctk.CTkButton(
+            row_frame, text="Browse", width=90, height=ENTRY_HEIGHT,
+            corner_radius=CORNER_RADIUS, font=FONT_BODY,
+            fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER,
+            command=lambda v=var: self._browse_dir(v),
+        ).grid(row=0, column=1, padx=(0, 4))
+
+        row_info = {"frame": row_frame, "var": var}
+        ctk.CTkButton(
+            row_frame, text="X", width=36, height=ENTRY_HEIGHT,
+            corner_radius=CORNER_RADIUS, font=FONT_BUTTON,
+            fg_color=ERROR_COLOR, hover_color="#C0392B",
+            command=lambda ri=row_info: self._remove_dir_row(name, ri),
+        ).grid(row=0, column=2)
+
+        rows.append(row_info)
+
+    def _remove_dir_row(self, name: str, row_info: dict):
+        """Remove a folder row from field *name*; always keep at least one."""
+        rows = self._dir_rows[name]
+        if row_info not in rows:
+            return
+        if len(rows) == 1:
+            row_info["var"].set("")  # keep one empty row rather than none
+            return
+        row_info["frame"].destroy()
+        rows.remove(row_info)
+        for i, ri in enumerate(rows):
+            ri["frame"].grid(row=i, column=0, sticky="ew", pady=(0, 4))
+
+    def _collect_dir_paths(self, name: str) -> list[str]:
+        """Return the de-duplicated, non-empty folder paths for field *name*."""
+        seen: set[str] = set()
+        result: list[str] = []
+        for ri in self._dir_rows[name]:
+            p = ri["var"].get().strip()
+            if p and p not in seen:
+                seen.add(p)
+                result.append(p)
+        return result
 
     def _add_path_row(
         self, parent, row: int, label: str, helper: str,
@@ -256,10 +382,13 @@ class FilePanel(ctk.CTkFrame):
         """Validate inputs, save to controller, persist defaults, and advance."""
         self._error_var.set("")
 
+        mem_paths = self._collect_dir_paths("mem")
+        csp_paths = self._collect_dir_paths("csp")
+        cmap_paths = self._collect_dir_paths("cmap")
         self._controller.set_paths(
-            mem_path=self._mem_var.get().strip(),
-            csp_path=self._csp_var.get().strip(),
-            cmap_path=self._cmap_var.get().strip(),
+            mem_path=mem_paths,
+            csp_path=csp_paths,
+            cmap_path=cmap_paths,
             csv_path=self._csv_var.get().strip(),
         )
 
@@ -271,11 +400,11 @@ class FilePanel(ctk.CTkFrame):
         # Persist checked paths as defaults for next session.
         to_save = {}
         if self._save_mem.get():
-            to_save[KEY_MEM_DIR] = self._mem_var.get().strip()
+            to_save[KEY_MEM_DIR] = mem_paths
         if self._save_csp.get():
-            to_save[KEY_CSP_DIR] = self._csp_var.get().strip()
+            to_save[KEY_CSP_DIR] = csp_paths
         if self._save_cmap.get():
-            to_save[KEY_CMAP_DIR] = self._cmap_var.get().strip()
+            to_save[KEY_CMAP_DIR] = cmap_paths
         if self._save_csv.get():
             to_save[KEY_CSV_FILE] = self._csv_var.get().strip()
         if to_save:

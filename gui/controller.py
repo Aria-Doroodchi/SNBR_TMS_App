@@ -24,6 +24,7 @@ from core.user_settings import (
     KEY_EMAIL_DEFAULT_TO, KEY_EMAIL_DEFAULT_CC, KEY_EMAIL_DEFAULT_BCC,
     KEY_EMAIL_SUBJECT, KEY_EMAIL_BODY, KEY_EMAIL_REMEMBER_PASSWORD,
 )
+from parser.mem_parser import iter_mem_files
 from processing.df_builder import (
     _apply_cmap_merge,
     build_combined_dataframe_incremental,
@@ -43,6 +44,15 @@ from reports.csv_exporter import find_latest_csv
 from reports.report_builder import build_header_only_figure
 
 
+def _as_path_list(value) -> list[str]:
+    """Normalise a stored directory setting (legacy str or list) to list[str]."""
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [value.strip()] if value.strip() else []
+    return [str(v).strip() for v in value if str(v).strip()]
+
+
 class AppController:
     """Stores user selections and orchestrates backend calls for the GUI."""
 
@@ -50,9 +60,9 @@ class AppController:
     _CSV_ARCHIVE_DIR = MEM_DIR.parent / "SNBR_CSV_Archive"
 
     def __init__(self):
-        self._mem_path: str = ""
-        self._csp_path: str = ""
-        self._cmap_path: str = ""
+        self._mem_paths: list[str] = []
+        self._csp_paths: list[str] = []
+        self._cmap_paths: list[str] = []
         self._csv_path: str = ""  # a *file* path, not a directory
         self._dataframe: pd.DataFrame | None = None
         self._quick_start_message: str = ""
@@ -65,15 +75,15 @@ class AppController:
         saved = load_defaults()
 
         # Import paths — saved defaults take priority over hardcoded config.
-        self._mem_path = saved.get(KEY_MEM_DIR, "")
-        if not self._mem_path and MEM_DIR.is_dir():
-            self._mem_path = str(MEM_DIR)
+        self._mem_paths = _as_path_list(saved.get(KEY_MEM_DIR, ""))
+        if not self._mem_paths and MEM_DIR.is_dir():
+            self._mem_paths = [str(MEM_DIR)]
 
-        self._csp_path = saved.get(KEY_CSP_DIR, "")
-        if not self._csp_path and CSP_DIR.is_dir():
-            self._csp_path = str(CSP_DIR)
+        self._csp_paths = _as_path_list(saved.get(KEY_CSP_DIR, ""))
+        if not self._csp_paths and CSP_DIR.is_dir():
+            self._csp_paths = [str(CSP_DIR)]
 
-        self._cmap_path = saved.get(KEY_CMAP_DIR, "")
+        self._cmap_paths = _as_path_list(saved.get(KEY_CMAP_DIR, ""))
 
         self._csv_path = saved.get(KEY_CSV_FILE, "")
         if not self._csv_path:
@@ -99,29 +109,34 @@ class AppController:
         """Erase every saved default and reset in-memory paths."""
         from core.user_settings import clear_all_defaults
         clear_all_defaults()
-        self._mem_path = ""
-        self._csp_path = ""
-        self._cmap_path = ""
+        self._mem_paths = []
+        self._csp_paths = []
+        self._cmap_paths = []
         self._csv_path = ""
         self._default_export_csv = ""
         self._default_export_pdf = ""
 
     def set_paths(
-        self, mem_path: str, csp_path: str, csv_path: str,
-        cmap_path: str = "",
+        self, mem_path, csp_path="", csv_path: str = "",
+        cmap_path="",
     ):
-        """Save the user-selected import paths."""
-        self._mem_path = mem_path
-        self._csp_path = csp_path
-        self._cmap_path = cmap_path
+        """Save the user-selected import paths.
+
+        *mem_path*, *csp_path* and *cmap_path* may each be a single directory
+        string or a list of directories (the user can pick files from several
+        locations).  *csv_path* is always a single archive file.
+        """
+        self._mem_paths = _as_path_list(mem_path)
+        self._csp_paths = _as_path_list(csp_path)
+        self._cmap_paths = _as_path_list(cmap_path)
         self._csv_path = csv_path
 
-    def get_paths(self) -> dict[str, str]:
-        """Return the current import paths."""
+    def get_paths(self) -> dict:
+        """Return the current import paths (dir fields are lists of dirs)."""
         return {
-            "mem_path": self._mem_path,
-            "csp_path": self._csp_path,
-            "cmap_path": self._cmap_path,
+            "mem_path": list(self._mem_paths),
+            "csp_path": list(self._csp_paths),
+            "cmap_path": list(self._cmap_paths),
             "csv_path": self._csv_path,
         }
 
@@ -129,16 +144,20 @@ class AppController:
         """Validate paths and return a list of error messages (empty = valid)."""
         errors = []
 
-        if not self._mem_path:
-            errors.append("MEM files directory is required.")
-        elif not Path(self._mem_path).is_dir():
-            errors.append(f"MEM files directory does not exist:\n{self._mem_path}")
+        if not self._mem_paths:
+            errors.append("At least one MEM files directory is required.")
+        else:
+            for p in self._mem_paths:
+                if not Path(p).is_dir():
+                    errors.append(f"MEM files directory does not exist:\n{p}")
 
-        if self._csp_path and not Path(self._csp_path).is_dir():
-            errors.append(f"CSP MEM directory does not exist:\n{self._csp_path}")
+        for p in self._csp_paths:
+            if not Path(p).is_dir():
+                errors.append(f"CSP MEM directory does not exist:\n{p}")
 
-        if self._cmap_path and not Path(self._cmap_path).is_dir():
-            errors.append(f"CMAP files directory does not exist:\n{self._cmap_path}")
+        for p in self._cmap_paths:
+            if not Path(p).is_dir():
+                errors.append(f"CMAP files directory does not exist:\n{p}")
 
         if self._csv_path and not Path(self._csv_path).is_file():
             errors.append(f"Archive CSV file does not exist:\n{self._csv_path}")
@@ -155,28 +174,33 @@ class AppController:
         up those fields without having to re-parse the MEM folder.
         """
         df = load_existing_csv(self._csv_path)
-        if self._cmap_path:
-            df = _apply_cmap_merge(df, self._cmap_path)
+        if self._cmap_paths:
+            df = _apply_cmap_merge(df, self._cmap_paths)
         self._dataframe = df
         return df
 
     def parse_and_build(self) -> pd.DataFrame:
         """Parse MEM files incrementally and return the combined DataFrame."""
         df = build_combined_dataframe_incremental(
-            mem_dir=self._mem_path,
-            csp_dir=self._csp_path or None,
+            mem_dir=self._mem_paths,
+            csp_dir=self._csp_paths or None,
             existing_csv=self._csv_path or None,
-            cmap_dir=self._cmap_path or None,
+            cmap_dir=self._cmap_paths or None,
         )
         self._dataframe = df
         return df
 
     def count_new_mem_files(self, df: pd.DataFrame) -> int:
-        """Count .MEM files in the MEM directory not present in the DataFrame."""
-        mem_dir = Path(self._mem_path)
-        if not mem_dir.is_dir():
+        """Count .MEM files across the MEM directories not present in the DataFrame."""
+        if not any(Path(p).is_dir() for p in self._mem_paths):
             return 0
-        all_files = {p.name for p in mem_dir.glob("*.MEM")}
+        all_files = {
+            p.name
+            for p in iter_mem_files(
+                self._mem_paths,
+                exclude_dirs=[self._csp_paths or None, self._cmap_paths or None],
+            )
+        }
         if "source_file" not in df.columns:
             return len(all_files)
         known = set(df["source_file"].dropna().unique())
@@ -1131,9 +1155,15 @@ class AppController:
                 raise ValueError(
                     "Import Settings: " + "; ".join(errors)
                 )
-            summary["mem_dir"] = saved.get(KEY_MEM_DIR, "")
-            summary["csp_dir"] = saved.get(KEY_CSP_DIR, "")
-            summary["cmap_dir"] = saved.get(KEY_CMAP_DIR, "")
+            summary["mem_dir"] = "; ".join(
+                _as_path_list(saved.get(KEY_MEM_DIR, ""))
+            )
+            summary["csp_dir"] = "; ".join(
+                _as_path_list(saved.get(KEY_CSP_DIR, ""))
+            )
+            summary["cmap_dir"] = "; ".join(
+                _as_path_list(saved.get(KEY_CMAP_DIR, ""))
+            )
             summary["csv_file"] = saved.get(KEY_CSV_FILE, "")
 
         # Phase 2 — data_mode: load CSV
