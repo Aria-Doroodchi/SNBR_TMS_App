@@ -25,6 +25,27 @@ from gui.theme import (
 from gui.page_shell import resolve_footer
 
 
+def cycle_count_lines(report: dict) -> str:
+    """Status-line text for the cycle counts the export read, or ""."""
+    if not report:
+        return ""
+    found = report.get("found") or {}
+    text = "\nCycle counts read: " + ", ".join(
+        f"{measure.replace('_', '-')} {found.get(measure, 0)}"
+        for measure in ("T_SICI", "A_SICI", "T_SICF", "A_SICF")
+    )
+    if not report.get("xlsx_folder"):
+        text += "\nT-SICF / A-SICF cycles left blank: no Qtrac Excel folder set."
+    if not report.get("mem_folder"):
+        text += "\nT-SICI / A-SICI cycles left blank: no MEM folder set."
+    for item in report.get("unrecordable") or []:
+        text += (
+            f"\nLeft blank: record {item['record_id']:03d} {item['date']} "
+            f"{item['measure'].replace('_', '-')} = {item['cycles']} cycles"
+        )
+    return text
+
+
 class RedcapPanel(ctk.CTkFrame):
     """GUI frame for generating a REDCap import CSV."""
 
@@ -451,6 +472,8 @@ class RedcapPanel(ctk.CTkFrame):
                 "\nNot exported (REDCap keeps one record per visit): "
                 + ", ".join(skipped_targets)
             )
+
+        msg += cycle_count_lines(summary.get("cycle_counts") or {})
 
         self._status_var.set(msg)
 

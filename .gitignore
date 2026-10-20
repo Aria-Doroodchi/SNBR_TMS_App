@@ -20,6 +20,7 @@ dist_macos/
 # ── User-specific settings (machine paths, email, exclusions) ──
 core/saved_defaults.json
 dispatch/saved_settings.json
+clinical/saved_settings.json
 
 # ── Runtime-generated sync log ─────────────────────────
 back_up_sync/sync_log.txt

@@ -255,11 +255,26 @@ sits next to the source. Email passwords are the exception — they go in the OS
 
 ---
 
+## 7b. The two companion apps
+
+Two smaller apps live in the same tree and reuse the backend without touching the wizard:
+
+- **Dispatch** (`dispatch/` + `dispatch_gui/`): reads the *exported* report PDFs and the enrolment
+  workbook, stamps name + MRN onto a copy of each cover page, packs them into size-capped folders and
+  records in an append-only ledger what the operator declares sent.
+- **Clinical Reports** (`clinical/` + `clinical_gui/`): reads the *archive CSV* (the full table) and the
+  enrolment workbook, lets a clinician find a patient by name, MRN or study ID, draws the analysis app's
+  graphs for one visit and exports an identified report. Its controller **subclasses** `AppController` and
+  its graphs page **subclasses** the Visualization page, so there is one graph pipeline, not three.
+
+Each has its own settings JSON and its own icon; none of them imports a GUI package from the others.
+
 ## 8. Packaging & deployment
 
 The app ships as a single Windows executable built with **PyInstaller** (`--onefile --windowed`, see
 `SNBR_TMS_App.spec` and `build.bat`) — one `SNBR_TMS_App.exe` with no installer and no terminal
-window. A macOS `.app` build lives under `macos_build/`. Because a packaged app runs from a
+window. The companion apps build the same way (`SNBR_Report_Dispatch.spec` / `build_dispatch.bat`,
+`SNBR_Clinical_Reports.spec` / `build_clinical.bat`). A macOS `.app` build lives under `macos_build/`. Because a packaged app runs from a
 temporary extracted folder, `core/config.py` and `reports/pdf_layout.py` detect the frozen state
 (`sys.frozen` / `sys._MEIPASS`) and resolve paths accordingly. Everything works offline; only the
 email step reaches the network.

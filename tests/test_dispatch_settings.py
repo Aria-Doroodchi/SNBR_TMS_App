@@ -20,8 +20,6 @@ def test_defaults_are_the_lab_headers_and_a_20mb_cap():
     assert s[ds.KEY_COL_PATIENT_NAME] == "Patient Name"
     assert s[ds.KEY_COL_MRN] == "MRN"
     assert s[ds.KEY_SIZE_CAP_MB] == 20
-    assert s[ds.KEY_ALLOWED_DOMAIN] == "sunnybrook.ca"
-    assert s[ds.KEY_RECIPIENTS] == []
     for key in ds.PATH_KEYS:
         assert s[key] == ""
 
@@ -31,14 +29,13 @@ def test_settings_are_isolated_from_the_repo_file(tmp_path):
 
 
 def test_save_merges_and_round_trips():
-    ds.save_settings(**{ds.KEY_ROSTER_PATH: "Y:/roster.xlsx", ds.KEY_RECIPIENTS: ["a@sunnybrook.ca"]})
+    ds.save_settings(**{ds.KEY_ROSTER_PATH: "Y:/roster.xlsx"})
     ds.save_settings(**{ds.KEY_SIZE_CAP_MB: 15})
     s = ds.load_settings()
     assert s[ds.KEY_ROSTER_PATH] == "Y:/roster.xlsx"
-    assert s[ds.KEY_RECIPIENTS] == ["a@sunnybrook.ca"]
     assert s[ds.KEY_SIZE_CAP_MB] == 15
     raw = json.loads(ds._SETTINGS_FILE.read_text(encoding="utf-8"))
-    assert set(raw) == {ds.KEY_ROSTER_PATH, ds.KEY_RECIPIENTS, ds.KEY_SIZE_CAP_MB}
+    assert set(raw) == {ds.KEY_ROSTER_PATH, ds.KEY_SIZE_CAP_MB}
 
 
 def test_unknown_key_is_rejected():
@@ -49,27 +46,35 @@ def test_unknown_key_is_rejected():
 def test_corrupt_values_fall_back_to_defaults():
     ds._SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
     ds._SETTINGS_FILE.write_text(
-        json.dumps({ds.KEY_SIZE_CAP_MB: "lots", ds.KEY_RECIPIENTS: "not a list"}),
+        json.dumps({ds.KEY_SIZE_CAP_MB: "lots"}),
         encoding="utf-8",
     )
     s = ds.load_settings()
     assert s[ds.KEY_SIZE_CAP_MB] == 20
-    assert s[ds.KEY_RECIPIENTS] == []
 
 
-def test_recipients_parse_from_any_separator():
-    assert ds.parse_recipients("a@x.ca, b@x.ca; c@x.ca\n d@x.ca ,") == [
-        "a@x.ca", "b@x.ca", "c@x.ca", "d@x.ca",
-    ]
+def test_email_settings_are_gone_and_dropped_from_an_old_file():
+    """Sending is manual: no To list, domain guard or subject template remains.
 
+    A settings file saved by the earlier version still carries them; they are
+    ignored on load and removed the next time the file is written.
+    """
+    ds._SETTINGS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    ds._SETTINGS_FILE.write_text(json.dumps({
+        ds.KEY_ROSTER_PATH: "Y:/roster.xlsx",
+        "recipients": ["dr.a@sunnybrook.ca"],
+        "allowed_domain": "sunnybrook.ca",
+        "subject_template": "week of {week_start}",
+    }), encoding="utf-8")
+    loaded = ds.load_settings()
+    assert set(loaded) == set(ds.DEFAULTS)
+    assert not set(ds.RETIRED_KEYS) & set(ds.DEFAULTS)
+    with pytest.raises(KeyError):
+        ds.save_settings(recipients=["x@sunnybrook.ca"])
 
-def test_only_the_allowed_domain_passes():
-    problems = ds.validate_recipients(
-        ["dr.a@sunnybrook.ca", "Dr.B@Sunnybrook.CA", "x@gmail.com", "nobody", "@sunnybrook.ca"],
-        "sunnybrook.ca",
-    )
-    assert len(problems) == 3
-    assert any("gmail.com" in p for p in problems)
+    ds.save_settings(**{ds.KEY_SIZE_CAP_MB: 10})
+    raw = json.loads(ds._SETTINGS_FILE.read_text(encoding="utf-8"))
+    assert raw == {ds.KEY_ROSTER_PATH: "Y:/roster.xlsx", ds.KEY_SIZE_CAP_MB: 10}
 
 
 def test_identified_folder_inside_a_sync_source_is_refused(tmp_path):

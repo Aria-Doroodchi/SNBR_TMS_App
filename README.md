@@ -8,6 +8,15 @@ It runs fully offline on lab Windows machines and is packaged with PyInstaller.
 
 See [`gui/README.md`](gui/README.md) for a GUI quick-start.
 
+Two companion applications are built from the same tree:
+
+- **SNBR Report Dispatch** (`dispatch_main.py`, `build_dispatch.bat`) — binds patient identity from the
+  lab's enrolment workbook to exported report PDFs and tracks which have been sent.
+- **SNBR Clinical Reports** (`clinical_main.py`, `build_clinical.bat`) — for clinical collaborators: opens
+  the exported data-frame CSV and the enrolment workbook, finds a patient by name, MRN or study ID,
+  draws the same graphs as the analysis app, and exports a report with the patient's identity on its
+  cover. It does not parse `.MEM` files.
+
 ## License
 
 Released under the [PolyForm Noncommercial License 1.0.0](LICENSE): free to use,

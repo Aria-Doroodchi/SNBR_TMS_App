@@ -31,17 +31,19 @@ def restore_icons():
         MARKS[name].ico.write_bytes(data)
 
 
-def test_both_marks_are_registered_and_present():
-    assert set(MARKS) == {"analysis", "dispatch"}
+def test_all_three_marks_are_registered_and_present():
+    assert set(MARKS) == {"analysis", "dispatch", "clinical"}
     for mark in MARKS.values():
         assert mark.ico.is_file(), f"{mark.ico} is missing -- run scripts/{mark.generator}.py"
 
 
-def test_the_two_marks_are_different_files():
-    """Two executables in one dist/; identical icons would be a build bug."""
-    analysis, dispatch = MARKS["analysis"].ico, MARKS["dispatch"].ico
-    assert analysis.resolve() != dispatch.resolve()
-    assert analysis.read_bytes() != dispatch.read_bytes()
+def test_the_marks_are_pairwise_different_files():
+    """Three executables in one dist/; identical icons would be a build bug."""
+    import itertools
+
+    for a, b in itertools.combinations(sorted(MARKS), 2):
+        assert MARKS[a].ico.resolve() != MARKS[b].ico.resolve(), (a, b)
+        assert MARKS[a].ico.read_bytes() != MARKS[b].ico.read_bytes(), (a, b)
 
 
 def test_ensure_icon_returns_the_existing_file_untouched():
@@ -236,7 +238,8 @@ def test_the_bundled_icons_tree_holds_no_scratch_or_preview_files():
     assert strays == [], f"scratch files would be bundled into the executables: {strays}"
 
 
-def test_rendering_the_mark_twice_gives_identical_bytes():
+@pytest.mark.parametrize("generator", ["generate_dispatch_logo", "generate_clinical_logo"])
+def test_rendering_the_mark_twice_gives_identical_bytes(generator):
     """What makes the spec's ``regenerate=True`` safe.
 
     The spec re-renders the mark on every build so the shipped icon always
@@ -245,9 +248,10 @@ def test_rendering_the_mark_twice_gives_identical_bytes():
     leave the working tree dirty. Checked at one small size to stay fast; the
     full render is the same code path.
     """
-    from scripts.generate_dispatch_logo import LIGHT, render_at
+    import importlib
 
-    first, second = render_at(32, LIGHT), render_at(32, LIGHT)
+    module = importlib.import_module(f"scripts.{generator}")
+    first, second = module.render_at(32, module.LIGHT), module.render_at(32, module.LIGHT)
     assert first.tobytes() == second.tobytes()
 
 

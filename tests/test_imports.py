@@ -63,6 +63,7 @@ def test_the_module_list_is_not_empty_or_truncated():
         "parser._common", "processing.df_builder", "reports.report_builder",
         "emailing.pdf_letterhead", "core.user_settings", "back_up_sync.file_sync",
         "dispatch_main", "dispatch.ledger", "dispatch_gui.app",
+        "clinical_main", "clinical.directory", "clinical.export", "clinical_gui.app",
     ):
         assert expected in APP_MODULES, f"{expected} missing from the module list"
 
@@ -82,6 +83,8 @@ def test_importing_main_does_not_launch_the_app():
     assert hasattr(module, "main"), "main.py must keep its main() entry point"
     dispatch = importlib.import_module("dispatch_main")
     assert hasattr(dispatch, "main"), "dispatch_main.py must keep its main() entry point"
+    clinical = importlib.import_module("clinical_main")
+    assert hasattr(clinical, "main"), "clinical_main.py must keep its main() entry point"
 
 
 @pytest.mark.parametrize("module_name,attribute", [
@@ -105,7 +108,7 @@ def test_optional_dependencies_are_not_imported_at_module_scope(module_name, att
 
 BACKEND_PACKAGES = (
     "parser", "processing", "reports", "emailing", "back_up_sync", "core",
-    "dispatch",
+    "dispatch", "clinical",
 )
 
 
@@ -121,7 +124,7 @@ def test_the_backend_never_imports_the_gui():
     import subprocess
 
     # By top-level package, not string prefix: "dispatch_gui" starts with
-    # "dispatch" but is a GUI package.
+    # "dispatch" but is a GUI package, and "clinical_gui" likewise.
     backend = [n for n in APP_MODULES if n.split(".")[0] in BACKEND_PACKAGES]
     assert backend, "no backend modules found -- discovery is broken"
 
@@ -130,7 +133,8 @@ def test_the_backend_never_imports_the_gui():
         f"sys.path.insert(0, {str(APP_ROOT)!r})\n"
         f"for name in {backend!r}:\n"
         "    importlib.import_module(name)\n"
-        "leaked = sorted(m for m in sys.modules if m == 'gui' or m.startswith('gui.'))\n"
+        "leaked = sorted(m for m in sys.modules "
+        "if m.split('.')[0] in ('gui', 'dispatch_gui', 'clinical_gui'))\n"
         "print(json.dumps(leaked))\n"
     )
     result = subprocess.run(

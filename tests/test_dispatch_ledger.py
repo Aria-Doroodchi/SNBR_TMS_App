@@ -146,3 +146,12 @@ def test_run_ids_are_unique_and_dated():
     when = datetime(2026, 9, 8, 14, 30, 5)
     a, b = new_run_id(when), new_run_id(when)
     assert a.startswith("20260908-143005-") and a != b
+
+
+def test_a_send_without_recipients_keeps_the_event_shape(ledger):
+    """The app no longer holds a To list; the field stays, empty, so old and
+    new ``sent`` events replay through the same code."""
+    ledger.mark_sent(_report(), "run1", 1, 1)
+    (event,) = [json.loads(l) for l in ledger.path.read_text(encoding="utf-8").splitlines()]
+    assert event["event"] == "sent" and event["recipients"] == [] and event["declared"] is True
+    assert ledger.state().sent_record(_report()).recipients == []

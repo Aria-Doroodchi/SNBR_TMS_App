@@ -189,6 +189,13 @@ class VisualizationPanel(ctk.CTkFrame):
     # ── UI ─────────────────────────────────────────────────
 
     def _build_ui(self):
+        """Assemble the page from its parts, in this order.
+
+        Each part is its own method so that a sibling app can replace one of
+        them -- the heading, the option boxes above the graph list, the footer
+        -- while inheriting the graph list, preview, navigation and caching
+        unchanged. Widget creation order is the order below.
+        """
         self.grid_columnconfigure(0, weight=0)   # sidebar
         self.grid_columnconfigure(1, weight=1)    # preview
         self.grid_rowconfigure(1, weight=1)
@@ -196,7 +203,34 @@ class VisualizationPanel(ctk.CTkFrame):
         # Title row (spans both columns)
         title_frame = ctk.CTkFrame(self, fg_color="transparent")
         title_frame.grid(row=0, column=0, columnspan=2, sticky="ew", padx=PAD_X, pady=(SECTION_PAD_Y, 4))
+        self._build_title(title_frame)
 
+        # ── Left sidebar ──────────────────────────────────
+        sidebar = ctk.CTkScrollableFrame(self, width=240, corner_radius=CORNER_RADIUS)
+        sidebar.grid(row=1, column=0, sticky="ns", padx=(PAD_X, 8), pady=(0, 0))
+        sidebar.grid_columnconfigure(0, weight=1)
+        self._sidebar = sidebar
+
+        # Cortex selection section (populated dynamically in refresh)
+        self._cortex_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
+        self._cortex_frame.grid(row=0, column=0, sticky="ew")
+        self._cortex_frame.grid_columnconfigure(0, weight=1)
+        self._cortex_frame.grid_remove()  # hidden until refresh populates it
+
+        sidebar_row = self._build_sidebar_options(sidebar, 1)
+        self._build_graph_list(sidebar, sidebar_row)
+
+        # ── Right preview area ────────────────────────────
+        right = ctk.CTkFrame(self, fg_color="transparent")
+        right.grid(row=1, column=1, sticky="nsew", padx=(8, PAD_X))
+        right.grid_rowconfigure(0, weight=1)
+        right.grid_columnconfigure(0, weight=1)
+        self._build_preview(right)
+
+        self._build_footer()
+
+    def _build_title(self, title_frame):
+        """The heading, its subtitle, and the pulse-variability choice."""
         ctk.CTkLabel(title_frame, text="Visualization", font=FONT_TITLE, anchor="w").pack(
             side="top", anchor="w",
         )
@@ -230,21 +264,11 @@ class VisualizationPanel(ctk.CTkFrame):
         )
         self._pulse_note.pack(side="top", anchor="w", pady=(0, 2))
 
-        # ── Left sidebar ──────────────────────────────────
-        sidebar = ctk.CTkScrollableFrame(self, width=240, corner_radius=CORNER_RADIUS)
-        sidebar.grid(row=1, column=0, sticky="ns", padx=(PAD_X, 8), pady=(0, 0))
-        sidebar.grid_columnconfigure(0, weight=1)
-        self._sidebar = sidebar
+    def _build_sidebar_options(self, sidebar, sidebar_row: int) -> int:
+        """The option boxes between the target boxes and the graph list.
 
-        sidebar_row = 0
-
-        # Cortex selection section (populated dynamically in refresh)
-        self._cortex_frame = ctk.CTkFrame(sidebar, fg_color="transparent")
-        self._cortex_frame.grid(row=sidebar_row, column=0, sticky="ew")
-        self._cortex_frame.grid_columnconfigure(0, weight=1)
-        self._cortex_frame.grid_remove()  # hidden until refresh populates it
-        sidebar_row += 1
-
+        Returns the next free sidebar row.
+        """
         # Select-all toggle
         sa_cb = ctk.CTkCheckBox(
             sidebar,
@@ -267,7 +291,10 @@ class VisualizationPanel(ctk.CTkFrame):
             font=FONT_SMALL,
         ).grid(row=sidebar_row, column=0, sticky="w", pady=(0, SECTION_PAD_Y))
         sidebar_row += 1
+        return sidebar_row
 
+    def _build_graph_list(self, sidebar, sidebar_row: int) -> int:
+        """One checkbox per registry entry, under its group heading."""
         current_group = ""
         for entry in GRAPH_REGISTRY:
             if entry.group != current_group:
@@ -289,13 +316,10 @@ class VisualizationPanel(ctk.CTkFrame):
             sidebar_row += 1
             self._check_vars[entry.key] = var
             self._check_widgets[entry.key] = cb
+        return sidebar_row
 
-        # ── Right preview area ────────────────────────────
-        right = ctk.CTkFrame(self, fg_color="transparent")
-        right.grid(row=1, column=1, sticky="nsew", padx=(8, PAD_X))
-        right.grid_rowconfigure(0, weight=1)
-        right.grid_columnconfigure(0, weight=1)
-
+    def _build_preview(self, right):
+        """The graph canvas, the arrow navigation and the Save row."""
         # Canvas host
         self._canvas_frame = ctk.CTkFrame(right, corner_radius=CORNER_RADIUS)
         self._canvas_frame.grid(row=0, column=0, sticky="nsew")
@@ -381,6 +405,8 @@ class VisualizationPanel(ctk.CTkFrame):
             height=28, corner_radius=CORNER_RADIUS, font=FONT_SMALL,
         ).grid(row=0, column=4, sticky="ew")
 
+    def _build_footer(self):
+        """The status line and the Back/Next bar in the pinned footer."""
         # Status / error
         ctk.CTkLabel(
             self._footer, textvariable=self._status_var, font=FONT_SMALL,

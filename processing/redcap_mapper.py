@@ -224,6 +224,46 @@ REDCAP_RADIO_INT_COLS = (
     "tms_coil",
 ) + REDCAP_COMPLETION_COLS
 
+# Number of cycles run per protocol. Not in the internal DataFrame: the REDCap
+# exporter reads them from the source .MEM (SICI) and the Qtrac Excel export
+# (SICF) into these transient columns, and to_redcap_dataframe turns each into
+# REDCap's radio (10 / 6 / 999 Other) plus the integer "Other" field.
+CYCLE_COLUMNS = {
+    "T_SICI_cycles_n": "t_sici_p_cycles_n",
+    "A_SICI_cycles_n": "a_sici_1000_cycles_n",
+    "A_SICF_cycles_n": "a_sicf_cycles_n",
+    "T_SICF_cycles_n": "t_sicf_p_cycles_n",
+}
+REDCAP_CYCLE_COLS = tuple(CYCLE_COLUMNS.values()) + tuple(
+    f"{c}_oth" for c in CYCLE_COLUMNS.values()
+)
+CYCLE_CODE_OTHER = 999
+# The "Other" field is validated as an integer 1-30 in the dictionary.
+CYCLE_OTHER_MIN, CYCLE_OTHER_MAX = 1, 30
+
+REDCAP_RADIO_INT_COLS = REDCAP_RADIO_INT_COLS + REDCAP_CYCLE_COLS
+
+
+def cycles_to_redcap(n) -> tuple[int | None, int | None]:
+    """``(radio code, Other value)`` for a cycle count, or ``(None, None)``.
+
+    10 is 10, 6 is 6, and 7-9 are 6 too: the lab records a 10-cycle run cut
+    short as 6. Anything else is Other (999) with the count itself, provided
+    the dictionary's 1-30 range accepts it; 0 or a count above 30 cannot be
+    imported and gives ``(None, None)``.
+    """
+    try:
+        n = int(n)
+    except (TypeError, ValueError):
+        return None, None
+    if n == 10:
+        return 10, None
+    if 6 <= n <= 9:
+        return 6, None
+    if CYCLE_OTHER_MIN <= n <= CYCLE_OTHER_MAX:
+        return CYCLE_CODE_OTHER, n
+    return None, None
+
 # Mapping for the TMS coil radio: internal canonical string → REDCap option code.
 TMS_COIL_TO_CODE = {
     "D70^2": 1,
@@ -235,16 +275,17 @@ TMS_COIL_TO_CODE = {
 # REDCap TMS value column order (matches the tms_values form layout)
 REDCAP_COLUMN_ORDER = (
     # T-SICI completion + ISI-count radio + per-ISI values
-    ["tsicip_completion", "t_sici_p_isi_n"]
+    ["tsicip_completion", "t_sici_p_isi_n", "t_sici_p_cycles_n", "t_sici_p_cycles_n_oth"]
     + [f"t_sici_p_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICI_ISI_VALUES]
     # A-SICI completion + ISI-count radio + per-ISI values
-    + ["asici1000_completion", "a_sici_1000_isi_n"]
+    + ["asici1000_completion", "a_sici_1000_isi_n",
+       "a_sici_1000_cycles_n", "a_sici_1000_cycles_n_oth"]
     + [f"a_sici_1000_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICI_ISI_VALUES]
     # A-SICF completion + ISI-count radio + per-ISI values
-    + ["asicf_completion", "a_sicf_isi_n"]
+    + ["asicf_completion", "a_sicf_isi_n", "a_sicf_cycles_n", "a_sicf_cycles_n_oth"]
     + [f"a_sicf_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICF_ISI_VALUES]
     # T-SICF completion + ISI-count radio + per-ISI values
-    + ["tsicfp_completion", "t_sicf_p_isi_n"]
+    + ["tsicfp_completion", "t_sicf_p_isi_n", "t_sicf_p_cycles_n", "t_sicf_p_cycles_n_oth"]
     + [f"t_sicf_p_{_isi_to_redcap_token(v)}_ms" for v in REDCAP_SICF_ISI_VALUES]
     # CSP completion + per-RMT-level values
     + ["csp_completion"]
@@ -323,6 +364,20 @@ def to_redcap_dataframe(
         out["tms_coil"] = out["tms_coil"].map(
             lambda v: TMS_COIL_TO_CODE.get(v) if isinstance(v, str) else
             (v if pd.notna(v) else np.nan)
+        )
+
+    # 4c. Cycle counts -> radio code + "Other" integer. Always present, so a
+    #     frame without counts still lines up with the REDCap columns.
+    for internal, rc_col in CYCLE_COLUMNS.items():
+        codes = (
+            out.pop(internal).map(cycles_to_redcap)
+            if internal in out.columns else None
+        )
+        out[rc_col] = (
+            codes.map(lambda c: c[0]).astype("float") if codes is not None else np.nan
+        )
+        out[f"{rc_col}_oth"] = (
+            codes.map(lambda c: c[1]).astype("float") if codes is not None else np.nan
         )
 
     # 5. Build final column order

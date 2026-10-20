@@ -29,11 +29,21 @@ from parser.recording_target import (
     is_hand_muscle,
     target_label,
 )
+from parser.cycle_counts import (
+    CYCLE_MEASURES,
+    MEM_CYCLE_MEASURES,
+    XLSX_CYCLE_MEASURES,
+    read_mem_cycle_counts,
+    read_xlsx_cycle_counts,
+)
+from parser.xlsx_parser import tokens_in
 from processing.redcap_mapper import (
+    REDCAP_CYCLE_COLS,
     REDCAP_COLUMN_ORDER,
     REDCAP_COMPLETION_COLS,
     REDCAP_COMPLETION_GATE_FOR_PREFIX,
     REDCAP_RADIO_INT_COLS,
+    cycles_to_redcap,
     to_redcap_dataframe,
 )
 
@@ -151,6 +161,93 @@ def format_record_id(pid, *, is_new: bool, existing_key=None):
     if not is_new and key:
         return key
     return f"{int(pid):0{RECORD_ID_WIDTH}d}"
+
+
+def _source_names(cell) -> list[str]:
+    if cell is None or (isinstance(cell, float) and np.isnan(cell)):
+        return []
+    return [n.strip() for n in str(cell).split(";") if n.strip()]
+
+
+def _attach_cycle_counts(
+    rows: pd.DataFrame,
+    wanted: pd.Series,
+    mem_files: dict | None,
+    xlsx_index: dict | None,
+) -> dict:
+    """Fill the transient ``*_cycles_n`` columns of *rows* in place.
+
+    SICI counts come from the row's source ``.MEM`` files (looked up by name
+    in *mem_files*), SICF counts from the Qtrac Excel export matching the
+    row's acquisition token in *xlsx_index*. Only rows flagged in *wanted*
+    are read (the ones the diff will actually compare), so an export never
+    opens every file on the share. A protocol with no count stays NaN, which
+    the diff reads as "nothing to say", leaving REDCap's value alone.
+    """
+    report = {
+        "found": {m: 0 for m in CYCLE_MEASURES},
+        "unrecordable": [],
+        "mem_folder": mem_files is not None,
+        "xlsx_folder": xlsx_index is not None,
+    }
+    for measure in CYCLE_MEASURES:
+        rows[f"{measure}_cycles_n"] = np.nan
+    mem_cache: dict = {}
+    xlsx_cache: dict = {}
+    for idx in rows.index[wanted.reindex(rows.index, fill_value=False).astype(bool)]:
+        cell = rows.at[idx, "source_file"] if "source_file" in rows.columns else None
+        counts: dict[str, int] = {}
+        for name in _source_names(cell) if mem_files else []:
+            path = mem_files.get(name)
+            if path is None:
+                continue
+            if path not in mem_cache:
+                mem_cache[path] = read_mem_cycle_counts(path)
+            for measure in MEM_CYCLE_MEASURES:
+                if measure in mem_cache[path]:
+                    counts.setdefault(measure, mem_cache[path][measure])
+        for token in sorted(tokens_in(cell)) if xlsx_index else []:
+            path = xlsx_index.get(token)
+            if path is None:
+                continue
+            if path not in xlsx_cache:
+                xlsx_cache[path] = read_xlsx_cycle_counts(path)
+            for measure in XLSX_CYCLE_MEASURES:
+                if measure in xlsx_cache[path]:
+                    counts.setdefault(measure, xlsx_cache[path][measure])
+        for measure, n in counts.items():
+            rows.at[idx, f"{measure}_cycles_n"] = n
+            report["found"][measure] += 1
+            if cycles_to_redcap(n)[0] is None:
+                report["unrecordable"].append({
+                    "record_id": int(rows.at[idx, "ID"]),
+                    "date": rows.at[idx, "Date"],
+                    "measure": measure,
+                    "cycles": int(n),
+                })
+    return report
+
+
+def _cycle_count_warnings(report: dict) -> list[str]:
+    """Plain-language warnings about cycle counts that could not be exported."""
+    warnings: list[str] = []
+    if not report.get("mem_folder"):
+        warnings.append(
+            "No MEM folder available: T-SICI / A-SICI cycle counts were not read."
+        )
+    if not report.get("xlsx_folder"):
+        warnings.append(
+            "No Qtrac Excel export folder set: T-SICF / A-SICF cycle counts "
+            "were left blank."
+        )
+    for item in report.get("unrecordable", []):
+        label = item["measure"].replace("_", "-")
+        warnings.append(
+            f"Record {item['record_id']:03d} on {item['date']}: {label} has "
+            f"{item['cycles']} cycles, which REDCap cannot record "
+            f"(Other accepts 1-30); left blank."
+        )
+    return warnings
 
 
 def _validate_against_template(
@@ -347,6 +444,8 @@ def generate_redcap_import(
     *,
     include_new_ids: bool = False,
     xlsx_report_dir: Path | str | None = None,
+    mem_files: dict[str, Path] | None = None,
+    xlsx_index: dict[str, Path] | None = None,
 ) -> tuple[pd.DataFrame, Path, dict]:
     """Generate a REDCap import CSV with only changed TMS values.
 
@@ -362,6 +461,14 @@ def generate_redcap_import(
         REDCap import template CSV.
     output_dir : Path
         Directory where the timestamped import CSV will be written.
+    mem_files : dict, optional
+        ``{filename: Path}`` over the MEM folder(s). The T-SICI / A-SICI
+        cycle counts are read from the rows' source files; without it they
+        are left blank.
+    xlsx_index : dict, optional
+        ``{token: workbook}`` over the Qtrac Excel export folder(s)
+        (``xlsx_parser.index_workbooks``). The T-SICF / A-SICF cycle counts
+        exist only there; a visit with no export leaves them blank.
 
     Returns
     -------
@@ -404,13 +511,6 @@ def generate_redcap_import(
         .drop(columns=["_target_rank", "_file_suffix"])
     )
 
-    py_rc = to_redcap_dataframe(py_snbr)
-    py_rc["_record_id"] = pd.to_numeric(
-        py_rc["record_id"], errors="coerce"
-    ).astype("Int64")
-    py_rc["_date_iso"] = py_snbr["date_iso"].values
-    py_rc["_cortex_py"] = py_snbr["cortex_py"].values
-
     # -- 2. Load REDCap data ---------------------------------------------------
     # ``record_id`` is read as text and kept: it is REDCap's own key for the
     # row, and this project's keys are zero-padded ("005"). Letting pandas
@@ -428,8 +528,42 @@ def generate_redcap_import(
         rc_df["cortex"].astype(str).str.strip().apply(_normalise_cortex_to_py)
     )
 
+    # Cycle counts are read from files, so only for the visits the diff will
+    # compare: a matching REDCap row, or a new participant when those are in.
+    def _pid(v):
+        return None if pd.isna(v) else int(v)
+
+    rc_keys = {
+        (_pid(p), d, c)
+        for p, d, c in zip(rc_df["record_id"], rc_df["tt_test_date"], rc_df["_cortex_py"])
+    }
+    rc_ids = {_pid(p) for p in rc_df["record_id"].dropna()}
+    wanted = pd.Series(
+        [
+            _pid(pid) is not None and (
+                (_pid(pid), d, c) in rc_keys
+                or (include_new_ids and _pid(pid) not in rc_ids)
+            )
+            for pid, d, c in zip(py_snbr["ID"], py_snbr["date_iso"], py_snbr["cortex_py"])
+        ],
+        index=py_snbr.index,
+        dtype=bool,
+    )
+    cycle_report = _attach_cycle_counts(py_snbr, wanted, mem_files, xlsx_index)
+
+    py_rc = to_redcap_dataframe(py_snbr)
+    py_rc["_record_id"] = pd.to_numeric(
+        py_rc["record_id"], errors="coerce"
+    ).astype("Int64")
+    py_rc["_date_iso"] = py_snbr["date_iso"].values
+    py_rc["_cortex_py"] = py_snbr["cortex_py"].values
+
+    # The cycle fields are new to the project, so a REDCap export taken before
+    # they were added has no such columns: treat them as empty rather than
+    # leaving them out of the diff.
     shared_tms_cols = [
-        c for c in TMS_VALUE_COLS if c in py_rc.columns and c in rc_df.columns
+        c for c in TMS_VALUE_COLS
+        if c in py_rc.columns and (c in rc_df.columns or c in REDCAP_CYCLE_COLS)
     ]
 
     # Participant-ID filter: by default, only emit rows for IDs already
@@ -461,6 +595,7 @@ def generate_redcap_import(
         "skipped_new_ids": skipped_new_ids,
         "new_ids_added": [],
         "skipped_targets": dropped_targets,
+        "cycle_counts": cycle_report,
     }
 
     for _, py_row in py_rc.iterrows():
@@ -570,9 +705,10 @@ def generate_redcap_import(
             stats["rows_changed"] += 1
 
     # -- 4. Build DataFrame & deduplicate --------------------------------------
+    cycle_warnings = _cycle_count_warnings(cycle_report)
     if not import_rows:
         empty = pd.DataFrame(columns=REQUIRED_KEY_COLS)
-        warn_list: list[str] = []
+        warn_list: list[str] = list(cycle_warnings)
         if skipped_new_ids:
             warn_list.append(
                 f"Skipped {len(skipped_new_ids)} new participant ID(s) "
@@ -635,6 +771,8 @@ def generate_redcap_import(
     # Validate against dictionary
     dict_warns = _validate_against_dictionary(import_df, redcap_dict_csv)
     qc_warnings.extend(dict_warns)
+
+    qc_warnings.extend(cycle_warnings)
 
     # Surface new-participant handling (informational, not a failure).
     if skipped_new_ids:

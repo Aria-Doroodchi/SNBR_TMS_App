@@ -109,4 +109,10 @@ def _isolate_user_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(
         dispatch_settings, "_SETTINGS_FILE", tmp_path / "dispatch_settings.json",
     )
+    # And the clinical app's (clinical/saved_settings.json in development).
+    from clinical import settings as clinical_settings
+
+    monkeypatch.setattr(
+        clinical_settings, "_SETTINGS_FILE", tmp_path / "clinical_settings.json",
+    )
     yield

@@ -249,10 +249,16 @@ class WelcomePanel(ctk.CTkFrame):
         pid_text = f"{study_label}ID {s['pid']}  |  {s['date']}"
         cortex_text = ", ".join(s["cortex"]) if s["cortex"] else "N/A"
 
-        row = add_summary_section(scroll, row, "Participant", [
-            f"ID: {pid_text}",
-            f"Cortex: {cortex_text}",
-        ])
+        participant_lines = [f"ID: {pid_text}", f"Cortex: {cortex_text}"]
+        # The "today's visits" mode reports one participant per run; when
+        # several were seen today, name them so the others are not forgotten.
+        today = s.get("today_visits") or []
+        if len(today) > 1:
+            participant_lines.append(
+                f"Seen today: {', '.join(today)} — this report covers one; "
+                "use Custom Workflow for the others."
+            )
+        row = add_summary_section(scroll, row, "Participant", participant_lines)
 
         # Paths
         path_lines = []

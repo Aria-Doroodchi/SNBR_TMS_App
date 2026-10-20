@@ -12,11 +12,15 @@ What it stores
 --------------
 Only keys: study, participant number, visit date, the report's SHA-256, its
 de-identified source filename, and send events (run id, part, Windows user,
-timestamp, configured recipients). Never a name or an MRN -- those are looked
+timestamp). Never a name or an MRN -- those are looked
 up from the workbook each run, so the share carries nothing the analysis
 app's own archive does not. In particular the *attachment* name, which does
 carry the name and MRN, is deliberately not recorded; it is reproducible
 from the roster and the visit date at any time.
+
+``recipients`` on a ``sent`` event is a relic of the version that kept a
+fixed To list. The app no longer knows who a report is emailed to, so new
+events carry ``[]``; the field stays so older ledgers replay unchanged.
 
 Events
 ------
@@ -25,7 +29,7 @@ Events
 ``closed``       a report the operator closed by hand ("not to send")
 ``run``          a batch folder was written (parts, count)
 ``sent``         one report in one part was **declared** sent by the operator
-                 (the app cannot verify a manual OWA send, and says so)
+                 (the app cannot verify a manual send, and says so)
 """
 
 from __future__ import annotations
@@ -245,7 +249,7 @@ class Ledger:
         run_id: str,
         part: int,
         parts: int,
-        recipients: list[str],
+        recipients: list[str] = (),
     ) -> tuple[bool, str]:
         """Declare *report* sent. Re-reads the ledger first.
 
@@ -265,6 +269,6 @@ class Ledger:
             "run_id": run_id, "part": part, "parts": parts,
             "source_file": report.path.name, "recipients": list(recipients),
             "at": _now(), "user": current_user(),
-            "declared": True,   # a manual OWA send; the app cannot verify it
+            "declared": True,   # a manual send; the app cannot verify it
         })
         return True, "recorded"

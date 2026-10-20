@@ -25,6 +25,9 @@ So the mark is prepared *before* ``EXE()`` is constructed (:func:`ensure_icon`,
 called from the spec), and confirmed to be inside the finished executable
 *after* the build (:func:`exe_embeds_icon`, called from the build script).
 
+The same three steps serve every mark registered in :data:`MARKS` -- the
+analysis app's coil, the dispatch app's envelope and the clinical app's page.
+
 A third step exists because embedding the icon is not enough to make Explorer
 *show* it: the shell caches icons per path and does not reliably notice an
 executable being replaced in place. See :func:`refresh_shell_icon`.
@@ -69,6 +72,12 @@ MARKS: dict[str, Mark] = {
         ico=PROJECT_ROOT / "icons" / "logo_dispatch" / "dispatch.ico",
         generator="generate_dispatch_logo",
         app="SNBR Report Dispatch",
+    ),
+    "clinical": Mark(
+        name="clinical",
+        ico=PROJECT_ROOT / "icons" / "logo_clinical" / "clinical.ico",
+        generator="generate_clinical_logo",
+        app="SNBR Clinical Reports",
     ),
 }
 

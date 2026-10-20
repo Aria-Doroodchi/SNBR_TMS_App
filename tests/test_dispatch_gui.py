@@ -65,7 +65,6 @@ def app(world):
         ds.KEY_REPORTS_DIR: str(world / "exports"),
         ds.KEY_IDENTIFIED_DIR: str(world / "identified"),
         ds.KEY_LEDGER_PATH: str(world / "share" / "ledger.jsonl"),
-        ds.KEY_RECIPIENTS: ["dr.a@sunnybrook.ca"],
     })
     try:
         from dispatch_gui.app import DispatchApp
@@ -124,7 +123,7 @@ def test_load_renders_rows_with_identity_status_and_notes(app):
     assert len([v for v, _ in app._row_vars if v.get()]) == 3, "proposed rows are ticked by default"
 
 
-def test_prepare_builds_a_part_card_with_the_five_actions(app):
+def test_prepare_builds_a_part_card_with_no_email_actions(app):
     app._tick_all(True)
     items = app._selected_items()
     assert len(items) == 3
@@ -134,28 +133,65 @@ def test_prepare_builds_a_part_card_with_the_five_actions(app):
 
     assert len(batch.parts) == 1
     part_texts = _labels(app._parts_frame)
-    assert any("Part 1 of 1" in t and "3 attachment(s)" in t for t in part_texts)
+    assert any("Part 1 of 1" in t and "3 report(s)" in t for t in part_texts)
     assert any("John_Smith_1234567_20260818.pdf" in t for t in part_texts)
     # 081's roster row has a name but no MRN: the name is kept, the MRN dropped.
-    assert any("Jane_Doe_20260818.pdf" in t for t in part_texts)
+    assert any("Jane_Doe_20260818.pdf" in t and "incomplete identification (roster row lacks MRN)" in t
+               for t in part_texts)
     # 082 has no roster row at all, so it keeps its de-identified name.
-    assert any("report_SNBR_082_20260818.pdf" in t for t in part_texts)
+    assert any("report_SNBR_082_20260818.pdf" in t and "de-identified" in t for t in part_texts)
     names = [b.cget("text") for b in _buttons(app._parts_frame)]
-    assert names == ["Copy subject", "Copy body", "Open folder", "Open mail", "Mark as sent"]
+    assert names == [
+        "Open batch folder", "Mark all as sent",
+        "Open folder", "Mark part as sent",
+        "Mark as sent", "Mark as sent", "Mark as sent",
+    ]
+    # Nothing to paste into an email any more: the batch is the PDFs alone.
+    assert [p.name for p in batch.folder.iterdir()] == ["part_1_of_1"]
 
-    email = batch.parts[0].email_path.read_text(encoding="utf-8")
-    assert email.startswith("To: dr.a@sunnybrook.ca\n")
-    assert "3 reports attached." in email
-    assert "  - Jane_Doe_20260818.pdf  (roster row lacks MRN)" in email
-    assert "de-identified" in email
-    assert "  - report_SNBR_082_20260818.pdf" in email
+
+def _entry_button(app, entry):
+    return next(btn for e, btn in app._entry_buttons if e is entry)
 
 
-def test_mark_as_sent_records_and_updates_the_table(app):
-    part = app._controller.batch.parts[0]
-    app._on_mark_sent(part)
+def test_one_report_can_be_marked_sent_on_its_own(app):
+    batch = app._controller.batch
+    first = batch.entries[0]
+    app._on_mark_entry(first)
     app.update_idletasks()
 
+    state = app._controller.ledger.state()
+    assert state.status(first.item.report) == "sent"
+    assert sum(1 for e in batch.entries if state.status(e.item.report) == "sent") == 1
+    assert _entry_button(app, first).cget("state") == "disabled"
+    assert _entry_button(app, first).cget("text") == "Sent"
+    assert all(_entry_button(app, e).cget("state") == "normal" for e in batch.entries[1:])
+    assert app._counts_var.get() == "2 unsent, 0 revised, 1 sent, 0 closed"
+    assert "1 report(s) recorded as sent" in app._status_var.get()
+
+
+def test_someone_else_marking_meanwhile_is_refused_not_duplicated(app):
+    """The re-read before each write: a report another machine recorded is not
+    recorded twice, and the status line says so."""
+    from dispatch.ledger import Ledger
+    batch = app._controller.batch
+    second = batch.entries[1]
+    Ledger(app._controller.ledger.path).mark_sent(second.item.report, "other-run", 1, 1)
+
+    app._on_mark_entry(second)
+    events, _ = app._controller.ledger.events()
+    assert sum(1 for e in events if e["event"] == "sent") == 2
+    assert "already marked by someone else" in app._status_var.get()
+    assert _entry_button(app, second).cget("state") == "disabled"
+
+
+def test_mark_all_records_only_what_is_left(app):
+    batch = app._controller.batch
+    app._on_mark_all()
+    app.update_idletasks()
+
+    events, _ = app._controller.ledger.events()
+    assert sum(1 for e in events if e["event"] == "sent") == 3, "each report recorded exactly once"
     state = app._controller.ledger.state()
     assert all(state.status(i.report) == "sent" for i in app._controller.worklist.items)
     texts = _labels(app._table)
@@ -163,17 +199,15 @@ def test_mark_as_sent_records_and_updates_the_table(app):
     assert sum(1 for t in texts if t.startswith("SENT (")) == 3
     assert app._counts_var.get() == "0 unsent, 0 revised, 3 sent, 0 closed"
     assert app._prepare_btn.cget("state") == "disabled"
-    sent_btn = [b for b in _buttons(app._parts_frame) if b.cget("text") == "Sent"]
-    assert len(sent_btn) == 1 and sent_btn[0].cget("state") == "disabled"
-    assert "3 report(s) recorded as sent" in app._status_var.get()
+    assert "Batch: 1 report(s) recorded as sent" in app._status_var.get()
+    assert all(btn.cget("state") == "disabled" for _, btn in app._entry_buttons)
+    assert all(btn.cget("text") == "Part sent" for _, btn in app._part_buttons)
+    assert app._mark_all_btn.cget("state") == "disabled"
 
-
-def test_marking_again_is_refused_not_duplicated(app):
-    part = app._controller.batch.parts[0]
-    app._on_mark_sent(part)
+    app._on_mark_sent(batch.parts[0])
+    assert "already recorded" in app._status_var.get()
     events, _ = app._controller.ledger.events()
     assert sum(1 for e in events if e["event"] == "sent") == 3
-    assert "already marked" in app._status_var.get()
 
 
 def test_a_re_exported_report_shows_as_a_revision(app, world):
@@ -186,14 +220,10 @@ def test_a_re_exported_report_shows_as_a_revision(app, world):
     assert app._prepare_btn.cget("state") == "normal"
 
 
-def test_bad_recipient_is_refused_at_save(app):
-    app._setting_vars["recipients"].set("dr.a@sunnybrook.ca, x@gmail.com")
-    app._on_save_settings()
-    assert "gmail.com" in app._settings_msg.cget("text")
-    # The autouse fixture gives each test a fresh settings file; a save would
-    # have written both addresses into it.
-    assert ds.load_settings()[ds.KEY_RECIPIENTS] == [], "nothing must be saved"
-    app._setting_vars["recipients"].set("dr.a@sunnybrook.ca")
+def test_settings_tab_has_no_email_fields(app):
+    assert set(app._setting_vars) == set(ds.DEFAULTS)
+    texts = " ".join(_labels(app._tabs.tab("Settings"))).lower()
+    assert "recipient" not in texts and "subject" not in texts
 
 
 def test_unconfigured_app_opens_on_settings(world):

@@ -91,10 +91,13 @@ KEY_DATA_MODE = "data_mode"
 DATA_MODE_ARCHIVE_AS_IS = "archive_as_is"
 DATA_MODE_ARCHIVE_PLUS_NEW = "archive_plus_new"
 DATA_MODE_FULL_PARSE = "full_parse"
+# The archive .csv plus a parse of the visits recorded on the day the app runs.
+DATA_MODE_TODAY_ONLY = "today_only"
 DATA_MODES = (
     DATA_MODE_ARCHIVE_AS_IS,
     DATA_MODE_ARCHIVE_PLUS_NEW,
     DATA_MODE_FULL_PARSE,
+    DATA_MODE_TODAY_ONLY,
 )
 
 # Optional Quick Start steps the user has turned off, as a list of the STEP_*

@@ -1,23 +1,25 @@
-"""Assemble a weekly hand-off batch: stamped PDFs packed into size-capped parts.
+"""Assemble a hand-off batch: stamped PDFs packed into size-capped folders.
 
-The send is manual -- Outlook on the web, attachments added by hand -- so
-the app's job ends at a folder the operator can work from::
+The app identifies reports and tracks what was sent; it does not send. The
+operator emails the files by hand, so the app's job ends at a folder::
 
     <identified_dir>/2026-09-08_batch_<run>/
         part_1_of_2/  John_Smith_1234567_20260818.pdf ...
         part_2_of_2/  ...
-        EMAIL_part_1_of_2.txt      recipients, subject, body -- ready to paste
-        EMAIL_part_2_of_2.txt
 
-Parts are filled first-fit in worklist order against the cap on **raw file
-bytes**, which is what a browser upload enforces. A single report over the
-cap gets a part to itself and a warning; it is never silently dropped.
+Each part folder is sized to fit one email: parts are filled first-fit in
+worklist order against the cap on **raw file bytes**, which is what a browser
+upload enforces. A single report over the cap gets a part to itself and a
+warning; it is never silently dropped.
 
 Attachment names carry the identity exactly as the roster spells it
 (``First Last`` -> ``First_Last``), then the MRN and the visit date; whichever
 of the two the enrolment log lacks is simply left out. Only a report with
 neither keeps its de-identified ``report_<Study>_<ID>_<date>`` name, so the
 kinds are distinguishable in the mailbox as well as on their cover pages.
+
+Sending is recorded per report: :func:`mark_sent` declares any subset of the
+batch sent, and :func:`mark_part_sent` is that for one part folder.
 """
 
 from __future__ import annotations
@@ -26,7 +28,6 @@ import shutil
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from urllib.parse import quote
 
 from dispatch.ledger import Ledger, new_run_id
 from dispatch.stamp import stamp_report
@@ -50,9 +51,6 @@ class Part:
     parts: int
     folder: Path
     entries: list[BatchEntry]
-    email_path: Path
-    subject: str
-    body: str
     warnings: list[str] = field(default_factory=list)
 
     @property
@@ -66,12 +64,21 @@ class Batch:
     folder: Path
     week_start: date
     parts: list[Part]
-    recipients: list[str]
     warnings: list[str] = field(default_factory=list)
 
     @property
     def count(self) -> int:
         return sum(len(p.entries) for p in self.parts)
+
+    @property
+    def entries(self) -> list[BatchEntry]:
+        return [e for p in self.parts for e in p.entries]
+
+    def part_of(self, entry: BatchEntry) -> Part:
+        for part in self.parts:
+            if any(e is entry for e in part.entries):
+                return part
+        raise ValueError(f"{entry.filename} is not in batch {self.run_id}")
 
 
 # -- naming ----------------------------------------------------------------
@@ -81,7 +88,7 @@ def attachment_filename(item: WorklistItem) -> str:
 
     A roster row with a name but no MRN gives ``First_Last_YYYYMMDD.pdf``, and
     one with only an MRN gives ``MRN_YYYYMMDD.pdf`` -- the recipient can still
-    tell the attachments apart, which a count-only email body depends on. Only
+    tell the attachments apart. Only
     a report with neither keeps its de-identified source name.
     """
     if not item.identifying:
@@ -136,64 +143,12 @@ def plan_parts(entries: list[BatchEntry], cap_bytes: int) -> tuple[list[list[Bat
     return parts, warnings
 
 
-# -- text ------------------------------------------------------------------
-
-def render_subject(template: str, week_start: date, part: int, parts: int, count: int) -> str:
-    part_text = f" (part {part} of {parts})" if parts > 1 else ""
-    return template.format(
-        week_start=week_start.strftime("%d/%m/%Y"),
-        part=part_text,
-        count=count,
-    )
-
-
-def render_body(entries: list[BatchEntry], part: int, parts: int) -> str:
-    n = len(entries)
-    lines = [f"{n} report{'s' if n != 1 else ''} attached."]
-    if parts > 1:
-        lines.append(f"Part {part} of {parts}.")
-
-    revisions = [e for e in entries if e.item.is_revision]
-    if revisions:
-        lines += ["", "Revised reports (these supersede a version sent earlier):"]
-        lines += [f"  - {e.filename}" for e in revisions]
-
-    # Two separate blocks: a report carrying a name but no MRN is identified,
-    # just incompletely, and listing it as "de-identified" would misdescribe
-    # what the recipient is holding.
-    partial = [e for e in entries if e.item.partially_identified]
-    if partial:
-        lines += ["", "Reports with incomplete identification:"]
-        lines += [f"  - {e.filename}  ({e.item.unresolved_reason})" for e in partial]
-
-    unidentified = [e for e in entries if e.item.unidentified]
-    if unidentified:
-        lines += ["", "Reports sent de-identified (no patient identity could be resolved):"]
-        lines += [f"  - {e.filename}  ({e.item.unresolved_reason})" for e in unidentified]
-    return "\n".join(lines) + "\n"
-
-
-def render_email_file(recipients: list[str], subject: str, body: str) -> str:
-    return f"To: {'; '.join(recipients)}\nSubject: {subject}\n\n{body}"
-
-
-def mailto_url(recipients: list[str], subject: str, body: str) -> str:
-    """A ``mailto:`` link pre-filling To/Subject/Body (attachments stay manual)."""
-    return (
-        "mailto:" + ",".join(recipients)
-        + "?subject=" + quote(subject, safe="")
-        + "&body=" + quote(body, safe="")
-    )
-
-
 # -- the batch -------------------------------------------------------------
 
 def write_batch(
     items: list[WorklistItem],
     identified_dir: str | Path,
-    recipients: list[str],
     size_cap_mb: int,
-    subject_template: str,
     ledger: Ledger | None = None,
     when: datetime | None = None,
 ) -> Batch:
@@ -242,31 +197,35 @@ def write_batch(
             dest = folder / entry.filename
             shutil.move(str(entry.path), str(dest))
             entry.path = dest
-        subject = render_subject(subject_template, week_start, index, total, len(group))
-        body = render_body(group, index, total)
-        email_path = root / f"EMAIL_part_{index}_of_{total}.txt"
-        email_path.write_text(render_email_file(recipients, subject, body), encoding="utf-8")
-        parts.append(Part(
-            index=index, parts=total, folder=folder, entries=group,
-            email_path=email_path, subject=subject, body=body,
-        ))
+        parts.append(Part(index=index, parts=total, folder=folder, entries=group))
     shutil.rmtree(staging, ignore_errors=True)
 
     batch = Batch(
         run_id=run_id, folder=root, week_start=week_start, parts=parts,
-        recipients=list(recipients), warnings=warnings,
+        warnings=warnings,
     )
     if ledger is not None:
         ledger.record_run(run_id, total, batch.count, str(root))
     return batch
 
 
-def mark_part_sent(ledger: Ledger, batch: Batch, part: Part) -> list[tuple[BatchEntry, bool, str]]:
-    """Declare every report in *part* sent; each row re-checked first."""
+def mark_sent(
+    ledger: Ledger, batch: Batch, entries: list[BatchEntry],
+) -> list[tuple[BatchEntry, bool, str]]:
+    """Declare each of *entries* sent; every row is re-checked against the ledger.
+
+    The app cannot see the send -- it happens in the operator's mailbox --
+    so this records their declaration. A report someone else has already
+    marked is refused, not recorded twice, and the message says who did.
+    """
     results = []
-    for entry in part.entries:
-        recorded, message = ledger.mark_sent(
-            entry.item.report, batch.run_id, part.index, part.parts, batch.recipients,
-        )
+    for entry in entries:
+        part = batch.part_of(entry)
+        recorded, message = ledger.mark_sent(entry.item.report, batch.run_id, part.index, part.parts)
         results.append((entry, recorded, message))
     return results
+
+
+def mark_part_sent(ledger: Ledger, batch: Batch, part: Part) -> list[tuple[BatchEntry, bool, str]]:
+    """Declare every report in one part folder sent."""
+    return mark_sent(ledger, batch, part.entries)

@@ -25,6 +25,8 @@ load_participant_dataframe(participant_id, mem_dir, csv_path, csp_dir) -> pd.Dat
 
 from __future__ import annotations
 
+import datetime as _dt
+import os
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -51,6 +53,7 @@ from parser.CSP_parser import (
     CSP_VALUE_COLUMNS,
     csp_output_columns,
     parse_csp_directory,
+    parse_csp_file,
 )
 from parser.recording_target import (
     MUSCLE_COLUMN,
@@ -68,6 +71,7 @@ from parser.strength_duration_parser import (
 from parser.cmap_parser import (
     cmap_output_columns,
     parse_cmap_directory,
+    parse_cmap_file,
 )
 
 # ---------------------------------------------------------------------------
@@ -1343,6 +1347,177 @@ def build_combined_dataframe_incremental(
     )
     combined.attrs["total_mem_files"] = len(mem_files)
     return combined
+
+
+# ---------------------------------------------------------------------------
+# Today's visits only (archive + the day's recordings)
+# ---------------------------------------------------------------------------
+
+# The date Qtrac encodes in the acquisition token: ``TP3C61013A`` is
+# 13/10/2026 — one year digit, month, day, then the session letter. Checked
+# against the share: the header ``Date:`` agreed on every sampled file, while
+# the file's modified time matched it on only about half (files are re-saved).
+_TOKEN_DATE_PATTERN = re.compile(r"C(\d)(\d{2})(\d{2})[A-Z]$", flags=re.IGNORECASE)
+
+
+def _token_date_matches(name: str, day: _dt.date) -> bool | None:
+    """Whether a file's acquisition token names *day*; ``None`` without a token.
+
+    The token carries only the year's last digit, so 2016 and 2026 both read
+    ``6`` — fine as a pre-filter, because the header date decides in the end.
+    """
+    token = _acquisition_token(name)
+    m = _TOKEN_DATE_PATTERN.search(token) if token else None
+    if not m:
+        return None
+    year_digit, month, dd = (int(g) for g in m.groups())
+    return (year_digit, month, dd) == (day.year % 10, day.month, day.day)
+
+
+def _modified_on(path: Path, day: _dt.date) -> bool:
+    try:
+        return _dt.date.fromtimestamp(os.stat(path).st_mtime) == day
+    except OSError:
+        return False
+
+
+def files_recorded_on(files: list[Path], day: _dt.date) -> list[Path]:
+    """The files that may hold a recording from *day*, without opening any.
+
+    A file whose acquisition token names another date is skipped outright;
+    one with no readable token is kept only if it was modified that day. The
+    result is a superset — callers confirm on the header ``Date:``.
+    """
+    keep: list[Path] = []
+    for f in files:
+        verdict = _token_date_matches(f.stem, day)
+        if verdict or (verdict is None and _modified_on(f, day)):
+            keep.append(f)
+    return keep
+
+
+def build_today_dataframe(
+    existing_csv: str | Path,
+    mem_dir: str | Path | list[str | Path],
+    csp_dir: str | Path | list[str | Path] | None = None,
+    cmap_dir: str | Path | list[str | Path] | None = None,
+    *,
+    today: _dt.date | None = None,
+    mem_recursive: bool = True,
+    csp_recursive: bool = True,
+    cmap_recursive: bool = True,
+) -> pd.DataFrame:
+    """The archive CSV plus a fresh parse of *today*'s visits — nothing else.
+
+    Every other visit comes from the archive exactly as stored; only files
+    recorded on *today* (default: the machine's date) are parsed — MEM, CSP and
+    CMAP alike. The folders are still listed (cheap), but a file is opened only
+    when its acquisition token names that day (see :func:`files_recorded_on`),
+    and a record is kept only when its header ``Date:`` is that day. CMAP
+    reports carry no token, so those modified that day are parsed and matched
+    to today's rows on ``(ID, Date)``.
+
+    Archive rows dated *today* are replaced by the fresh parse, so running this
+    again later in the day picks up recordings made since.
+
+    Assumes a schema-current archive; callers route a stale one to the
+    incremental builder instead (its old rows would lack the newer columns).
+
+    The returned frame's attrs carry ``today_date`` (``dd/mm/YYYY``),
+    ``today_mem_files``, ``today_csp_files``, ``today_cmap_files``,
+    ``today_rows`` and ``archive_rows_replaced``.
+    """
+    day = today or _dt.date.today()
+    day_str = day.strftime("%d/%m/%Y")
+
+    mem_roots = normalize_dirs(mem_dir)
+    if not any(r.exists() for r in mem_roots):
+        shown = ", ".join(str(r) for r in mem_roots) or "(none provided)"
+        raise FileNotFoundError(f"MEM folder does not exist: {shown}")
+
+    archive = load_existing_csv(existing_csv)
+
+    # ---- MEM (and CSP, when it shares the MEM folder) ----
+    mem_candidates = files_recorded_on(
+        iter_mem_files(
+            mem_roots,
+            exclude_dirs=mem_scan_exclusions(mem_roots, csp_dir, cmap_dir),
+            recursive=mem_recursive,
+        ),
+        day,
+    )
+    csp_roots = normalize_dirs(csp_dir)
+    shared = any(
+        folder_contains(c, root) for c in csp_roots for root in mem_roots
+    )
+    if shared:
+        # Classify by content, as the other builders do — but only the day's
+        # candidates, not the whole folder.
+        mem_candidates, csp_candidates = split_shared_mem_csp_folder(mem_candidates)
+    elif csp_roots:
+        csp_candidates = files_recorded_on(
+            iter_files(csp_roots, "*.MEM", recursive=csp_recursive), day,
+        )
+    else:
+        csp_candidates = []
+
+    mem_records = []
+    for f in mem_candidates:
+        record = parse_mem_file(f)
+        if record.get("Date") == day_str:
+            record["source_file"] = f.name
+            mem_records.append(record)
+
+    csp_records = []
+    for f in csp_candidates:
+        record = parse_csp_file(f)
+        if record.get("Date") == day_str:
+            record["source_file"] = f.name
+            csp_records.append(record)
+
+    # ---- CMAP: only a report written today can belong to today's visit ----
+    cmap_records = []
+    if normalize_dirs(cmap_dir):
+        for f in iter_files(cmap_dir, "*", recursive=cmap_recursive):
+            if f.name.startswith("~$") or f.suffix.lower() not in {".pdf", ".docx"}:
+                continue
+            if not _modified_on(f, day):
+                continue
+            record = parse_cmap_file(f)
+            if record.get("ID") is None:
+                continue
+            if not record.get("CMAP_table") and not record.get("MUNIX_table"):
+                continue
+            cmap_records.append(record)
+
+    if mem_records or csp_records:
+        today_df = build_mem_dataframe(mem_records)
+        if csp_records:
+            today_df = merge_csp_into_mem(today_df, build_csp_dataframe(csp_records))
+        if cmap_records:
+            today_df = merge_cmap_into_mem(today_df, build_cmap_dataframe(cmap_records))
+        today_df = _normalize_mem_dataframe(
+            _coalesce_same_session_rows(_normalize_mem_dataframe(today_df))
+        )
+        replaced = archive["Date"].astype(str).str.strip() == day_str
+        result = _normalize_mem_dataframe(
+            pd.concat([archive.loc[~replaced], today_df], ignore_index=True)
+        )
+        today_rows = len(today_df)
+        archive_rows_replaced = int(replaced.sum())
+    else:
+        # Nothing recorded today: the archive is the whole answer.
+        result = archive.copy()
+        today_rows = 0
+        archive_rows_replaced = 0
+
+    result.attrs["today_date"] = day_str
+    result.attrs["today_mem_files"] = len(mem_records)
+    result.attrs["today_csp_files"] = len(csp_records)
+    result.attrs["today_cmap_files"] = len(cmap_records)
+    result.attrs["today_rows"] = today_rows
+    result.attrs["archive_rows_replaced"] = archive_rows_replaced
+    return result
 
 
 # ---------------------------------------------------------------------------

@@ -2,11 +2,13 @@
 
 import threading
 import traceback
+from datetime import date
 
 import customtkinter as ctk
 
 from core.user_settings import (
     DATA_MODE_ARCHIVE_AS_IS, DATA_MODE_ARCHIVE_PLUS_NEW, DATA_MODE_FULL_PARSE,
+    DATA_MODE_TODAY_ONLY,
 )
 from gui.theme import (
     FONT_TITLE, FONT_HEADING, FONT_SMALL, FONT_SUBTITLE, FONT_BUTTON,
@@ -21,12 +23,16 @@ MODE_PARSE_MEM = 2
 # Fast path: load the chosen archive CSV as-is — no MEM-folder scan, no CMAP
 # merge. Requires a CSV to have been selected on the Import Settings page.
 MODE_EXISTING_CSV_FAST = 3
+# The archive CSV plus a parse of only the visits recorded today — for
+# reporting the patients seen today without re-reading every folder.
+MODE_TODAY_ONLY = 4
 
 # The radio values above are a UI detail; the saved default is a stable slug.
 _MODE_TO_SLUG = {
     MODE_EXISTING_CSV_FAST: DATA_MODE_ARCHIVE_AS_IS,
     MODE_EXISTING_CSV: DATA_MODE_ARCHIVE_PLUS_NEW,
     MODE_PARSE_MEM: DATA_MODE_FULL_PARSE,
+    MODE_TODAY_ONLY: DATA_MODE_TODAY_ONLY,
 }
 _SLUG_TO_MODE = {slug: mode for mode, slug in _MODE_TO_SLUG.items()}
 
@@ -190,12 +196,32 @@ class DataModePanel(ctk.CTkFrame):
             anchor="w",
         ).grid(row=6, column=0, sticky="w", padx=(26, 0), pady=(0, SECTION_PAD_Y))
 
+        # Option 4 — the archive plus only today's visits
+        self._radio_today = ctk.CTkRadioButton(
+            options,
+            text="Add today's visits to the previous data frame (archive .csv)",
+            variable=self._mode_var,
+            value=MODE_TODAY_ONLY,
+            font=FONT_HEADING,
+        )
+        self._radio_today.grid(row=7, column=0, sticky="w", pady=(0, 2))
+
+        self._today_desc = ctk.CTkLabel(
+            options,
+            text=self._today_text(""),
+            font=FONT_SUBTITLE,
+            text_color=SUBTITLE_COLOR,
+            anchor="w",
+            justify="left",
+        )
+        self._today_desc.grid(row=8, column=0, sticky="w", padx=(26, 0), pady=(0, SECTION_PAD_Y))
+
         # Ticking this stores the selected option for Quick Start; leaving it
         # unticked never clears a previously saved one (as on every other page).
         ctk.CTkCheckBox(
             options, text="Save as default", variable=self._save_default,
             font=FONT_SMALL,
-        ).grid(row=7, column=0, sticky="e", pady=(0, PAD_Y))
+        ).grid(row=9, column=0, sticky="e", pady=(0, PAD_Y))
 
         # Progress bar (hidden until import starts)
         self._progress = ctk.CTkProgressBar(
@@ -239,6 +265,16 @@ class DataModePanel(ctk.CTkFrame):
         )
         self._next_btn.grid(row=0, column=1, sticky="e")
 
+    @staticmethod
+    def _today_text(csv_path: str) -> str:
+        today = date.today().strftime("%d/%m/%Y")
+        text = (
+            "Load the archive .csv and parse only the MEM, CSP and CMAP files "
+            f"recorded today ({today}) — the quickest way to report today's "
+            "TMS patients."
+        )
+        return f"{text}\n({csv_path})" if csv_path else text
+
     # ── Refresh state when page is shown ───────────────────
 
     def refresh(self):
@@ -263,6 +299,8 @@ class DataModePanel(ctk.CTkFrame):
                     f"CSP-only follow-ups).\n({csv_path})"
                 ),
             )
+            self._radio_today.configure(state="normal")
+            self._today_desc.configure(text=self._today_text(csv_path))
             # Open on the saved default, else the fast path.
             self._mode_var.set(
                 _SLUG_TO_MODE.get(saved_mode, MODE_EXISTING_CSV_FAST)
@@ -276,7 +314,11 @@ class DataModePanel(ctk.CTkFrame):
             self._csv_desc.configure(
                 text="No CSV archive was selected on the previous page.",
             )
-            # Both archive modes need a CSV, so a saved one is unusable here.
+            self._radio_today.configure(state="disabled")
+            self._today_desc.configure(
+                text="No CSV archive was selected on the previous page.",
+            )
+            # The archive modes need a CSV, so a saved one is unusable here.
             self._mode_var.set(MODE_PARSE_MEM)
 
         # Clear any previous status
@@ -319,6 +361,9 @@ class DataModePanel(ctk.CTkFrame):
                 # Fast path: load the archive as-is, no folder access at all.
                 df = self._controller.load_csv_dataframe(merge_cmap=False)
                 self.after(0, self._on_fast_success, df)
+            elif mode == MODE_TODAY_ONLY:
+                df = self._controller.load_today_dataframe()
+                self.after(0, self._on_today_success, df)
             elif mode == MODE_EXISTING_CSV:
                 # Load the existing archive and fold in any newly recorded
                 # visits — new .MEM files *and* new CSP-only follow-ups — so a
@@ -357,6 +402,33 @@ class DataModePanel(ctk.CTkFrame):
                 "those graphs will be unavailable. Use 'Update existing data "
                 "frame' or a full parse to populate them."
             )
+        self._on_next()
+
+    def _on_today_success(self, df):
+        """Callback after the archive + today's-visits load."""
+        self._set_busy(False)
+        attrs = getattr(df, "attrs", {})
+        day = attrs.get("today_date", "")
+        visits = attrs.get("today_visits") or []
+        self._status_var.set(f"Data ready — {len(df)} rows.")
+        self._status_label.configure(text_color=SUCCESS_COLOR)
+        if visits:
+            message = (
+                f"Today ({day}): {len(visits)} participant(s) added — "
+                f"{', '.join(visits)}."
+            )
+        else:
+            message = (
+                f"No visits recorded today ({day}) were found in the MEM "
+                "folders — only the archive is loaded."
+            )
+        if attrs.get("today_fallback"):
+            message = (
+                "The archive was out of date, so every visit was re-parsed "
+                "instead (export the archive to make this option fast again). "
+                + message
+            )
+        self._info_var.set(" ".join([message] + _id_mismatch_warning(attrs)))
         self._on_next()
 
     def _on_import_success(self, df, new_mem: int, new_csp: int):

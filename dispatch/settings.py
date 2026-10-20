@@ -43,10 +43,12 @@ KEY_COL_MRN = "col_mrn"                    # header of the MRN column
 KEY_REPORTS_DIR = "reports_dir"            # where the analysis app exports PDFs
 KEY_IDENTIFIED_DIR = "identified_dir"      # where stamped batches are written
 KEY_LEDGER_PATH = "ledger_path"            # the append-only JSONL ledger
-KEY_RECIPIENTS = "recipients"              # list[str], the fixed To list
-KEY_SIZE_CAP_MB = "size_cap_mb"            # per-part cap on raw attachment bytes
-KEY_ALLOWED_DOMAIN = "allowed_domain"      # recipients must be @this
-KEY_SUBJECT_TEMPLATE = "subject_template"  # see batch.render_subject
+KEY_SIZE_CAP_MB = "size_cap_mb"            # per-part-folder cap on raw file bytes
+
+# Keys an earlier version saved for its email step (the To list, its domain
+# guard, the subject template). Sending is manual now and these are dropped
+# from the file on the next save rather than lingering in it.
+RETIRED_KEYS = ("recipients", "allowed_domain", "subject_template")
 
 DEFAULTS: dict = {
     KEY_ROSTER_PATH: "",
@@ -57,10 +59,7 @@ DEFAULTS: dict = {
     KEY_REPORTS_DIR: "",
     KEY_IDENTIFIED_DIR: "",
     KEY_LEDGER_PATH: "",
-    KEY_RECIPIENTS: [],
     KEY_SIZE_CAP_MB: 20,
-    KEY_ALLOWED_DOMAIN: "sunnybrook.ca",
-    KEY_SUBJECT_TEMPLATE: "SNBR TMS reports - week of {week_start}{part}",
 }
 
 # Keys whose value is a filesystem path (validated as such by the GUI).
@@ -107,8 +106,11 @@ def load_settings() -> dict:
 
 
 def save_settings(**kwargs) -> None:
-    """Merge the given key=value pairs into the saved settings (atomic)."""
-    data = _read()
+    """Merge the given key=value pairs into the saved settings (atomic).
+
+    Retired keys are dropped from the file as it is rewritten.
+    """
+    data = {k: v for k, v in _read().items() if k not in RETIRED_KEYS}
     for key, value in kwargs.items():
         if key not in DEFAULTS:
             raise KeyError(f"unknown dispatch setting: {key}")
@@ -117,31 +119,6 @@ def save_settings(**kwargs) -> None:
 
 
 # ── Validation ──────────────────────────────────────────────────────────
-
-def parse_recipients(raw: str) -> list[str]:
-    """Split a comma/semicolon/newline separated address list."""
-    parts = []
-    for chunk in raw.replace(";", ",").replace("\n", ",").split(","):
-        chunk = chunk.strip()
-        if chunk:
-            parts.append(chunk)
-    return parts
-
-
-def validate_recipients(recipients: list[str], allowed_domain: str) -> list[str]:
-    """Return one message per recipient that is not at *allowed_domain*.
-
-    PHI leaves only for the hospital's own tenant; an address anywhere else is
-    rejected at settings time so it cannot reach a batch.
-    """
-    problems = []
-    domain = allowed_domain.strip().lower().lstrip("@")
-    for addr in recipients:
-        local, sep, host = addr.rpartition("@")
-        if not sep or not local or host.lower() != domain:
-            problems.append(f"{addr!r} is not an @{domain} address")
-    return problems
-
 
 def _is_within(path: Path, root: Path) -> bool:
     try:

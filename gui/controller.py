@@ -6,7 +6,7 @@ import matplotlib
 matplotlib.use("Agg")  # noqa: E402 — must precede any pyplot import
 
 import json
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import numpy as np
@@ -27,6 +27,7 @@ from core.user_settings import (
     KEY_SKIPPED_STEPS, QUICK_START_STEPS,
     STEP_EXPORT_CSV, STEP_EXPORT_PDF, STEP_EMAIL, STEP_REDCAP, STEP_SYNC,
     DATA_MODE_ARCHIVE_AS_IS, DATA_MODE_ARCHIVE_PLUS_NEW, DATA_MODE_FULL_PARSE,
+    DATA_MODE_TODAY_ONLY,
     KEY_REDCAP_DATA_DIR, KEY_REDCAP_DICT_DIR,
     KEY_REDCAP_TEMPLATE_DIR, KEY_REDCAP_EXPORT_DIR,
     KEY_REDCAP_XLSX_DIR,
@@ -60,6 +61,7 @@ from processing.df_builder import (
     _apply_cmap_merge,
     archive_predates_recording_targets,
     build_combined_dataframe_incremental,
+    build_today_dataframe,
     csv_schema_is_current,
     detect_participant_id_mismatches,
     load_existing_csv,
@@ -388,6 +390,53 @@ class AppController:
         self._schema_stale = False
         self._stale_raw_cols = None
         self._dataframe = df
+        return df
+
+    def load_today_dataframe(self, today: date | None = None) -> pd.DataFrame:
+        """The archive CSV plus a parse of *today*'s visits only.
+
+        For reporting the patients seen today: every earlier visit (the
+        reference cohort, the participant's own history) comes from the
+        archive as stored, and only the day's MEM/CSP/CMAP files are parsed.
+
+        An archive whose schema is out of date cannot take this shortcut — its
+        older rows would lack the newer columns (SR/SD, muscle/side) — so it
+        goes through the incremental build instead and ``today_fallback`` says
+        so. Either way ``today_visits`` names the participants seen *today*.
+        """
+        day = today or date.today()
+        if not csv_schema_is_current(self._csv_path):
+            df = self.parse_and_build()
+            df.attrs["today_fallback"] = True
+        else:
+            df = build_today_dataframe(
+                self._csv_path,
+                self._mem_paths,
+                csp_dir=self._csp_paths or None,
+                cmap_dir=self._cmap_paths or None,
+                today=day,
+                mem_recursive=self._mem_recursive,
+                csp_recursive=self._csp_recursive,
+                cmap_recursive=self._cmap_recursive,
+            )
+            df.attrs["today_fallback"] = False
+            self._schema_stale = False
+            self._stale_raw_cols = None
+            self._dataframe = df
+
+        day_str = day.strftime(self._DATE_FMT)
+        df.attrs["today_date"] = day_str
+        todays = df[df["Date"].astype(str).str.strip() == day_str]
+        visits = []
+        for _, row in todays.drop_duplicates(["Study", "ID"]).iterrows():
+            study = row.get("Study")
+            study = study if isinstance(study, str) and study.strip() else "?"
+            try:
+                visits.append(f"{study}-{int(row['ID']):03d}")
+            except (TypeError, ValueError):
+                continue
+        df.attrs["today_visits"] = sorted(visits)
+        self._flag_id_mismatches(df)
         return df
 
     def set_dataframe(self, df: pd.DataFrame):
@@ -2703,6 +2752,8 @@ class AppController:
             "Update existing data frame with new visits (MEM + CSP)",
         DATA_MODE_FULL_PARSE:
             "Parse .MEM files and create new data frame",
+        DATA_MODE_TODAY_ONLY:
+            "Add today's visits to the previous data frame (archive .csv)",
     }
 
     def get_data_mode_default(self) -> str:
@@ -3066,6 +3117,10 @@ class AppController:
             output_dir=export_dir,
             include_new_ids=include_new_ids,
             xlsx_report_dir=xlsx_report_dir or None,
+            # Cycle counts: SICI from the source .MEM files, SICF from the
+            # Qtrac Excel exports. No folder -> that pair is left blank.
+            mem_files=self._get_mem_file_index() if self._mem_paths else None,
+            xlsx_index=self._get_xlsx_index() if self._xlsx_paths else None,
         )
 
         summary["output_path"] = str(output_path)
@@ -3372,7 +3427,21 @@ class AppController:
         # Phase 2 — data_mode: build the frame the way the user saved
         if from_index <= 2 < to_index:
             mode = self.get_data_mode_default()
-            if mode in (DATA_MODE_ARCHIVE_PLUS_NEW, DATA_MODE_FULL_PARSE):
+            if mode == DATA_MODE_TODAY_ONLY:
+                _status("Loading archive and parsing today's visits...")
+                df = self.load_today_dataframe()
+                summary["today_visits"] = df.attrs.get("today_visits", [])
+                if df.attrs.get("today_fallback"):
+                    summary["schema_rebuilt"] = True
+                # The report step picks the most recent visit; with nothing
+                # recorded today that would quietly be an old one.
+                if not summary["today_visits"]:
+                    raise ValueError(
+                        "No visits recorded today "
+                        f"({df.attrs.get('today_date')}) were found in the MEM "
+                        "folders."
+                    )
+            elif mode in (DATA_MODE_ARCHIVE_PLUS_NEW, DATA_MODE_FULL_PARSE):
                 _status("Parsing MEM files...")
                 self.parse_and_build()
             # If the saved archive predates newer parser columns (e.g. SR/SD)

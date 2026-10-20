@@ -1,7 +1,8 @@
 """The one bridge between the dispatch window and the ``dispatch/`` backend.
 
 Holds the session: settings, the loaded roster and report index, the ledger,
-the current worklist and the batch being worked. Every method here is
+the current worklist and the batch being worked. Sending happens outside the
+app; the controller records what the operator declares sent. Every method here is
 synchronous; the window runs the slow ones (``load``, ``prepare_batch``) on a
 thread and marshals results back with ``after(0, ...)``.
 """
@@ -11,7 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from dispatch import settings as ds
-from dispatch.batch import Batch, Part, mailto_url, mark_part_sent, write_batch
+from dispatch.batch import Batch, BatchEntry, Part, mark_sent, write_batch
 from dispatch.ledger import Ledger
 from dispatch.report_index import ReportIndex, scan_reports
 from dispatch.roster import Roster, load_roster
@@ -38,16 +39,11 @@ class DispatchController:
             ds.KEY_IDENTIFIED_DIR: "Identified reports folder",
             ds.KEY_LEDGER_PATH: "Ledger file",
         }
-        missing = [label for key, label in labels.items() if not str(self.settings.get(key, "")).strip()]
-        if not self.settings.get(ds.KEY_RECIPIENTS):
-            missing.append("Recipients")
-        return missing
+        return [label for key, label in labels.items() if not str(self.settings.get(key, "")).strip()]
 
     def validate(self, values: dict) -> list[str]:
         """Problems that must be fixed before *values* can be saved."""
         problems = []
-        recipients = values.get(ds.KEY_RECIPIENTS, [])
-        problems += ds.validate_recipients(recipients, values.get(ds.KEY_ALLOWED_DOMAIN, "sunnybrook.ca"))
         try:
             cap = int(values.get(ds.KEY_SIZE_CAP_MB, 20))
             if cap <= 0:
@@ -108,22 +104,22 @@ class DispatchController:
         """Stamp and pack *items* into a batch folder. Slow: thread it."""
         s = self.settings
         self.batch = write_batch(
-            items, s[ds.KEY_IDENTIFIED_DIR], list(s[ds.KEY_RECIPIENTS]),
-            int(s[ds.KEY_SIZE_CAP_MB]), s[ds.KEY_SUBJECT_TEMPLATE], ledger=self.ledger,
+            items, s[ds.KEY_IDENTIFIED_DIR], int(s[ds.KEY_SIZE_CAP_MB]), ledger=self.ledger,
         )
         return self.batch
 
-    def mark_part_sent(self, part: Part) -> list[tuple]:
-        results = mark_part_sent(self.ledger, self.batch, part)
+    def mark_sent(self, entries: list[BatchEntry]) -> list[tuple]:
+        """Record *entries* of the current batch as sent (the operator's declaration)."""
+        results = mark_sent(self.ledger, self.batch, entries)
         self.refresh_statuses()
         return results
+
+    def mark_part_sent(self, part: Part) -> list[tuple]:
+        return self.mark_sent(part.entries)
 
     def close_report(self, item: WorklistItem, reason: str) -> None:
         self.ledger.close(item.report, reason)
         self.refresh_statuses()
-
-    def mailto(self, part: Part) -> str:
-        return mailto_url(self.batch.recipients, part.subject, part.body)
 
     # -- text for the issues panel -----------------------------------------------
 

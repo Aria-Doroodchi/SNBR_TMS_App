@@ -1,9 +1,10 @@
 """The dispatch window: a Worklist tab and a Settings tab.
 
-Worklist: load, tick the reports for this week's batch, Prepare, then for each
-part -- Copy subject / Copy body / Open folder / Open mail / Mark as sent. The
-send itself happens in Outlook on the web by hand; "Mark as sent" is the
-operator's declaration and is what the ledger records.
+Worklist: load, tick the reports for the batch, Prepare (stamp the identity
+onto copies, packed into size-capped part folders), then record what went out
+-- per report, per part, or the whole batch at once. The app sends nothing:
+the operator emails the files by hand, and "Mark as sent" is their
+declaration, which is what the ledger records.
 
 All backend work goes through :class:`dispatch_gui.controller.DispatchController`
 on a background thread; results come back via ``after(0, ...)``.
@@ -15,7 +16,6 @@ import os
 import subprocess
 import sys
 import threading
-import webbrowser
 from pathlib import Path
 from tkinter import filedialog
 
@@ -38,10 +38,7 @@ _S = {
     "reports_dir": ("Exported reports folder", "dir"),
     "identified_dir": ("Identified reports folder (batches)", "dir"),
     "ledger_path": ("Ledger file (.jsonl, on the shared drive)", "savefile"),
-    "recipients": ("Recipients (comma-separated)", "text"),
-    "allowed_domain": ("Allowed recipient domain", "text"),
-    "size_cap_mb": ("Attachment cap per email (MB)", "int"),
-    "subject_template": ("Subject template  ({week_start}, {part}, {count})", "text"),
+    "size_cap_mb": ("Size cap per part folder (MB)", "int"),
 }
 
 _STATUS_COLOR = {
@@ -93,7 +90,10 @@ class DispatchApp(ctk.CTk):
         self._controller = controller or DispatchController()
         self._busy = False
         self._row_vars: list[tuple[ctk.BooleanVar, object]] = []   # (var, WorklistItem)
-        self._part_widgets: list[dict] = []
+        self._entry_buttons: list[tuple[object, ctk.CTkButton]] = []   # (BatchEntry, button)
+        self._part_buttons: list[tuple[object, ctk.CTkButton]] = []    # (Part, button)
+        self._marked: set[int] = set()   # id() of batch entries already dealt with
+        self._mark_all_btn: ctk.CTkButton | None = None
         self._setting_vars: dict[str, ctk.StringVar] = {}
 
         self._build()
@@ -129,8 +129,8 @@ class DispatchApp(ctk.CTk):
         ctk.CTkLabel(header, text="SNBR Report Dispatch", font=FONT_TITLE, anchor="w").pack(anchor="w")
         ctk.CTkLabel(
             header,
-            text="Bind patient identity to exported reports, pack this week's batch, "
-                 "and record what was sent. The email itself is sent from Outlook on the web.",
+            text="Bind patient identity to exported reports and keep track of which ones "
+                 "have been sent. Reports are emailed by hand, outside this app.",
             font=FONT_SUBTITLE, text_color=SUBTITLE_COLOR, anchor="w", wraplength=1000, justify="left",
         ).pack(anchor="w")
 
@@ -291,12 +291,26 @@ class DispatchApp(ctk.CTk):
         """Render the parts of *batch* (called on the Tk thread)."""
         for widget in self._parts_frame.winfo_children():
             widget.destroy()
-        self._part_widgets = []
+        self._entry_buttons = []
+        self._part_buttons = []
+        self._marked = set()
         row = 0
+        top = ctk.CTkFrame(self._parts_frame, fg_color="transparent")
+        top.grid(row=row, column=0, sticky="ew", padx=8, pady=(6, 2))
+        top.grid_columnconfigure(0, weight=1)
         ctk.CTkLabel(
-            self._parts_frame, text=f"Batch folder: {batch.folder}", font=FONT_SMALL,
-            anchor="w", wraplength=620, justify="left",
-        ).grid(row=row, column=0, sticky="w", padx=8, pady=(6, 2))
+            top, text=f"Batch folder: {batch.folder}", font=FONT_SMALL,
+            anchor="w", wraplength=420, justify="left",
+        ).grid(row=0, column=0, sticky="w")
+        ctk.CTkButton(
+            top, text="Open batch folder", width=130, height=30, font=FONT_SMALL,
+            fg_color="transparent", border_width=1, command=lambda: _open_path(batch.folder),
+        ).grid(row=0, column=1, padx=(6, 0))
+        self._mark_all_btn = ctk.CTkButton(
+            top, text="Mark all as sent", width=140, height=30, font=FONT_BUTTON,
+            fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER, command=self._on_mark_all,
+        )
+        self._mark_all_btn.grid(row=0, column=2, padx=(6, 0))
         row += 1
         for warning in batch.warnings:
             ctk.CTkLabel(
@@ -310,42 +324,42 @@ class DispatchApp(ctk.CTk):
             card.grid_columnconfigure(0, weight=1)
             row += 1
             size_mb = part.total_bytes / (1024 * 1024)
+            head = ctk.CTkFrame(card, fg_color="transparent")
+            head.grid(row=0, column=0, columnspan=2, sticky="ew", padx=8, pady=(6, 2))
+            head.grid_columnconfigure(0, weight=1)
             ctk.CTkLabel(
-                card,
-                text=f"Part {part.index} of {part.parts}  -  {len(part.entries)} attachment(s), "
-                     f"{size_mb:.1f} MB\nSubject: {part.subject}",
-                font=FONT_BODY, anchor="w", justify="left",
-            ).grid(row=0, column=0, sticky="w", padx=8, pady=(6, 2))
-            names = "\n".join(f"  {e.filename}" for e in part.entries)
-            ctk.CTkLabel(card, text=names, font=FONT_SMALL, anchor="w", justify="left").grid(
-                row=1, column=0, sticky="w", padx=8,
-            )
-            buttons = ctk.CTkFrame(card, fg_color="transparent")
-            buttons.grid(row=2, column=0, sticky="w", padx=8, pady=(4, 8))
-            widgets = {"part": part}
-            for text, cmd in (
-                ("Copy subject", lambda p=part: self._copy(p.subject)),
-                ("Copy body", lambda p=part: self._copy(p.body)),
-                ("Open folder", lambda p=part: _open_path(p.folder)),
-                ("Open mail", lambda p=part: webbrowser.open(self._controller.mailto(p))),
-            ):
-                ctk.CTkButton(
-                    buttons, text=text, width=110, height=30, font=FONT_SMALL,
-                    fg_color="transparent", border_width=1, command=cmd,
-                ).pack(side="left", padx=(0, 6))
-            sent_btn = ctk.CTkButton(
-                buttons, text="Mark as sent", width=130, height=30, font=FONT_BUTTON,
-                fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER,
+                head,
+                text=f"Part {part.index} of {part.parts}  -  {len(part.entries)} report(s), {size_mb:.1f} MB",
+                font=FONT_BODY, anchor="w",
+            ).grid(row=0, column=0, sticky="w")
+            ctk.CTkButton(
+                head, text="Open folder", width=110, height=30, font=FONT_SMALL,
+                fg_color="transparent", border_width=1, command=lambda p=part: _open_path(p.folder),
+            ).grid(row=0, column=1, padx=(6, 0))
+            part_btn = ctk.CTkButton(
+                head, text="Mark part as sent", width=140, height=30, font=FONT_SMALL,
+                fg_color="transparent", border_width=1,
                 command=lambda p=part: self._on_mark_sent(p),
             )
-            sent_btn.pack(side="left", padx=(12, 0))
-            widgets["sent_button"] = sent_btn
-            self._part_widgets.append(widgets)
-
-    def _copy(self, text: str):
-        self.clipboard_clear()
-        self.clipboard_append(text)
-        self._set_status("Copied to the clipboard.")
+            part_btn.grid(row=0, column=2, padx=(6, 0))
+            self._part_buttons.append((part, part_btn))
+            for r, entry in enumerate(part.entries, start=1):
+                note = _entry_note(entry.item)
+                label_kwargs = {"text_color": _WARN_COLOR} if note else {}
+                ctk.CTkLabel(
+                    card, text=entry.filename + (f"\n    {note}" if note else ""),
+                    font=FONT_SMALL, anchor="w", justify="left", **label_kwargs,
+                ).grid(row=r, column=0, sticky="w", padx=(16, 6), pady=1)
+                btn = ctk.CTkButton(
+                    card, text="Mark as sent", width=110, height=26, font=FONT_SMALL,
+                    fg_color=ACCENT_COLOR, hover_color=ACCENT_HOVER,
+                    command=lambda e=entry: self._on_mark_entry(e),
+                )
+                btn.grid(row=r, column=1, sticky="e", padx=8, pady=1)
+                self._entry_buttons.append((entry, btn))
+            ctk.CTkFrame(card, height=6, fg_color="transparent").grid(
+                row=len(part.entries) + 1, column=0, columnspan=2,
+            )
 
     # -- settings tab ------------------------------------------------------------
 
@@ -381,9 +395,9 @@ class DispatchApp(ctk.CTk):
         row = len(_S)
         ctk.CTkLabel(
             scroll,
-            text="Recipients must all be at the allowed domain. The identified folder is refused "
-                 "if it sits inside a backup/sync source of the analysis app. The ledger holds "
-                 "study IDs, visit dates and file hashes only - never names or MRNs.",
+            text="The identified folder is refused if it sits inside a backup/sync source of the "
+                 "analysis app. The ledger holds study IDs, visit dates and file hashes only - "
+                 "never names or MRNs.",
             font=FONT_SMALL, text_color=SUBTITLE_COLOR, anchor="w", wraplength=900, justify="left",
         ).grid(row=row, column=0, columnspan=3, sticky="w", pady=(PAD_Y, 4))
         row += 1
@@ -421,13 +435,7 @@ class DispatchApp(ctk.CTk):
     def _settings_values(self) -> dict:
         values = {}
         for key, var in self._setting_vars.items():
-            text = var.get().strip()
-            if key == "recipients":
-                values[key] = [a.strip() for a in text.replace(";", ",").split(",") if a.strip()]
-            elif key == "size_cap_mb":
-                values[key] = text
-            else:
-                values[key] = text
+            values[key] = var.get().strip()
         return values
 
     def _on_save_settings(self):
@@ -519,24 +527,69 @@ class DispatchApp(ctk.CTk):
         self._apply_batch(batch)
         self._set_busy(False)
         self._set_status(
-            f"Batch ready: {batch.count} report(s) in {len(batch.parts)} part(s). "
-            f"Attach each part's files in Outlook on the web, send, then Mark as sent."
+            f"Batch ready: {batch.count} report(s) in {len(batch.parts)} part folder(s). "
+            f"Send them by hand, then mark what went out as sent."
             + (" Warnings above." if batch.warnings else ""),
             warn=bool(batch.warnings),
         )
 
+    def _on_mark_entry(self, entry):
+        self._mark_entries([entry], entry.filename)
+
     def _on_mark_sent(self, part):
-        results = self._controller.mark_part_sent(part)
+        self._mark_entries(part.entries, f"Part {part.index} of {part.parts}")
+
+    def _on_mark_all(self):
+        batch = self._controller.batch
+        if batch is not None:
+            self._mark_entries(batch.entries, "Batch")
+
+    def _mark_entries(self, entries, scope: str):
+        """Record the not-yet-marked *entries* as sent and update the buttons.
+
+        Entries already dealt with in this batch are skipped, so "Mark all"
+        after a few single marks records only the rest. A refusal means
+        someone else marked that report meanwhile; it counts as dealt with.
+        """
+        pending = [e for e in entries if id(e) not in self._marked]
+        if not pending:
+            self._set_status(f"{scope}: already recorded as sent.")
+            return
+        results = self._controller.mark_sent(pending)
         recorded = sum(1 for _, ok, _ in results if ok)
         refused = [(e.filename, msg) for e, ok, msg in results if not ok]
-        for widgets in self._part_widgets:
-            if widgets["part"] is part:
-                widgets["sent_button"].configure(text="Sent", state="disabled")
+        for entry, _, _ in results:
+            self._marked.add(id(entry))
+        self._refresh_mark_buttons()
         self._apply_worklist(self._controller.worklist)
         if refused:
             self._set_status(
-                f"Part {part.index}: {recorded} recorded; {len(refused)} already marked by someone "
+                f"{scope}: {recorded} recorded; {len(refused)} already marked by someone "
                 f"else - {refused[0][0]}: {refused[0][1]}", warn=True,
             )
         else:
-            self._set_status(f"Part {part.index} of {part.parts}: {recorded} report(s) recorded as sent.")
+            self._set_status(f"{scope}: {recorded} report(s) recorded as sent.")
+
+    def _refresh_mark_buttons(self):
+        for entry, btn in self._entry_buttons:
+            if id(entry) in self._marked:
+                btn.configure(text="Sent", state="disabled")
+        for part, btn in self._part_buttons:
+            if all(id(e) in self._marked for e in part.entries):
+                btn.configure(text="Part sent", state="disabled")
+        if self._mark_all_btn is not None and all(
+            id(e) in self._marked for e, _ in self._entry_buttons
+        ):
+            self._mark_all_btn.configure(text="All sent", state="disabled")
+
+
+def _entry_note(item) -> str:
+    """What the operator should know about one stamped report before sending it."""
+    notes = []
+    if item.is_revision:
+        notes.append("revised - supersedes a version sent earlier")
+    if item.partially_identified:
+        notes.append(f"incomplete identification ({item.unresolved_reason})")
+    elif item.unidentified:
+        notes.append(f"de-identified ({item.unresolved_reason})")
+    return "; ".join(notes)

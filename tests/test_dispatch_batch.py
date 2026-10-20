@@ -1,4 +1,4 @@
-"""dispatch/batch.py -- attachment names, part packing, email text, the folder."""
+"""dispatch/batch.py -- attachment names, part packing, the folder, marking sent."""
 
 from __future__ import annotations
 
@@ -8,8 +8,7 @@ from pathlib import Path
 import pytest
 
 from dispatch.batch import (
-    MB, BatchEntry, attachment_filename, mailto_url, mark_part_sent, plan_parts,
-    render_body, render_subject, write_batch,
+    MB, BatchEntry, attachment_filename, mark_part_sent, mark_sent, plan_parts, write_batch,
 )
 from dispatch.identity import Identity, ParticipantKey
 from dispatch.ledger import STATUS_REVISION, STATUS_SENT, STATUS_UNSENT, Ledger
@@ -62,56 +61,6 @@ def test_everything_fits_in_one_part_when_under_the_cap():
     assert len(parts) == 1 and warnings == []
 
 
-def test_subject_template():
-    t = "SNBR TMS reports - week of {week_start}{part}"
-    assert render_subject(t, date(2026, 9, 7), 1, 1, 3) == "SNBR TMS reports - week of 07/09/2026"
-    assert render_subject(t, date(2026, 9, 7), 2, 3, 3) == "SNBR TMS reports - week of 07/09/2026 (part 2 of 3)"
-    assert render_subject("{count} reports", date(2026, 9, 7), 1, 1, 3) == "3 reports"
-
-
-def test_body_is_a_count_plus_only_the_blocks_that_apply():
-    plain = [_entry("a.pdf"), _entry("b.pdf")]
-    assert render_body(plain, 1, 1) == "2 reports attached.\n"
-    assert render_body(plain[:1], 1, 1) == "1 report attached.\n"
-    assert "Part 2 of 3." in render_body(plain, 2, 3)
-
-    revised = _entry("r.pdf", 1, _item(5, status=STATUS_REVISION))
-    unresolved = _entry("report_SNBR_006_20260818.pdf", 1, _item(6, None, reason="not in the roster"))
-    body = render_body(plain + [revised, unresolved], 1, 1)
-    assert "4 reports attached." in body
-    assert "Revised reports" in body and "  - r.pdf" in body
-    assert "de-identified" in body
-    assert "  - report_SNBR_006_20260818.pdf  (not in the roster)" in body
-
-
-def test_partly_identified_reports_are_listed_apart_from_de_identified_ones():
-    """A report carrying a name but no MRN is identified, just incompletely --
-    listing it under "sent de-identified" misdescribes what the recipient has."""
-    partial = _entry("John_Smith_20260818.pdf", 1,
-                     _item(7, "John Smith", "", reason="roster row lacks MRN"))
-    anonymous = _entry("report_SNBR_008_20260818.pdf", 1,
-                       _item(8, None, reason="SNBR-008 is not in the roster"))
-    body = render_body([partial, anonymous], 1, 1)
-
-    assert "Reports with incomplete identification:" in body
-    assert "  - John_Smith_20260818.pdf  (roster row lacks MRN)" in body
-    assert "Reports sent de-identified (no patient identity could be resolved):" in body
-    assert "  - report_SNBR_008_20260818.pdf  (SNBR-008 is not in the roster)" in body
-    # The partial one must not appear under the de-identified heading.
-    tail = body[body.index("Reports sent de-identified"):]
-    assert "John_Smith" not in tail
-
-    # Neither block appears when every report is fully identified.
-    clean = render_body([_entry("a.pdf")], 1, 1)
-    assert "incomplete identification" not in clean and "de-identified" not in clean
-
-
-def test_mailto_encodes_subject_and_body():
-    url = mailto_url(["a@sunnybrook.ca", "b@sunnybrook.ca"], "week of 07/09", "2 reports attached.\n")
-    assert url.startswith("mailto:a@sunnybrook.ca,b@sunnybrook.ca?subject=week%20of%2007%2F09&body=")
-    assert "%0A" in url
-
-
 # -- the folder ------------------------------------------------------------
 
 pypdf = pytest.importorskip("pypdf")
@@ -141,7 +90,7 @@ def report_pdf(tmp_path):
     return make
 
 
-def test_write_batch_builds_parts_email_files_and_records_the_run(tmp_path, report_pdf):
+def test_write_batch_builds_part_folders_and_records_the_run(tmp_path, report_pdf):
     items = [
         _item(80, "John Smith", "1", path=report_pdf("report_SNBR_080_20260818.pdf")),
         _item(81, "Jane Doe", "2", path=report_pdf("report_SNBR_081_20260818.pdf"), status=STATUS_REVISION),
@@ -149,8 +98,7 @@ def test_write_batch_builds_parts_email_files_and_records_the_run(tmp_path, repo
     ]
     ledger = Ledger(tmp_path / "ledger.jsonl")
     batch = write_batch(
-        items, tmp_path / "identified", ["dr@sunnybrook.ca"], 20,
-        "Reports {week_start}{part}", ledger=ledger, when=datetime(2026, 9, 8, 14, 0),
+        items, tmp_path / "identified", 20, ledger=ledger, when=datetime(2026, 9, 8, 14, 0),
     )
     assert batch.folder.parent == tmp_path / "identified"
     assert batch.folder.name.startswith("2026-09-08_batch_20260908-140000-")
@@ -162,11 +110,8 @@ def test_write_batch_builds_parts_email_files_and_records_the_run(tmp_path, repo
     assert sorted(p.name for p in part.folder.iterdir()) == [
         "Jane_Doe_2_20260818.pdf", "John_Smith_1_20260818.pdf", "report_SNBR_082_20260818.pdf",
     ]
-    assert part.subject == "Reports 07/09/2026"
-    email = part.email_path.read_text(encoding="utf-8")
-    assert email.startswith("To: dr@sunnybrook.ca\nSubject: Reports 07/09/2026\n\n3 reports attached.")
-    assert "  - Jane_Doe_2_20260818.pdf" in email
-    assert "  - report_SNBR_082_20260818.pdf  (not in the roster)" in email
+    # The app sends nothing: the batch holds the stamped PDFs and nothing else.
+    assert sorted(p.name for p in batch.folder.iterdir()) == ["part_1_of_1"]
 
     cover = pypdf.PdfReader(str(part.folder / "John_Smith_1_20260818.pdf")).pages[0].extract_text()
     assert "PATIENT IDENTIFICATION" in cover and "John Smith" in cover
@@ -184,32 +129,70 @@ def test_write_batch_splits_at_the_cap_and_names_parts(tmp_path, report_pdf):
     one_pdf = items[0].report.path.stat().st_size
     cap_mb = 2
     assert one_pdf < cap_mb * MB < 3 * one_pdf, "fixture sizing assumption"
-    batch = write_batch(items, tmp_path / "identified", [], cap_mb, "s{part}", when=datetime(2026, 9, 8))
+    batch = write_batch(items, tmp_path / "identified", cap_mb, when=datetime(2026, 9, 8))
     assert len(batch.parts) >= 2
     assert [p.folder.name for p in batch.parts] == [f"part_{i}_of_{len(batch.parts)}" for i in range(1, len(batch.parts) + 1)]
-    assert batch.parts[0].subject == f"s (part 1 of {len(batch.parts)})"
     assert all(p.total_bytes <= cap_mb * MB for p in batch.parts)
 
 
 def test_duplicate_attachment_names_are_uniquified(tmp_path, report_pdf):
     a = _item(80, "John Smith", "1", path=report_pdf("report_SNBR_080_20260818.pdf"))
     b = _item(80, "John Smith", "1", path=report_pdf("report_SNBR_080_20260818_2.pdf"))
-    batch = write_batch([a, b], tmp_path / "identified", [], 20, "s", when=datetime(2026, 9, 8))
+    batch = write_batch([a, b], tmp_path / "identified", 20, when=datetime(2026, 9, 8))
     names = sorted(e.filename for e in batch.parts[0].entries)
     assert names == ["John_Smith_1_20260818.pdf", "John_Smith_1_20260818_2.pdf"]
 
 
 def test_empty_selection_is_refused(tmp_path):
     with pytest.raises(ValueError):
-        write_batch([], tmp_path, [], 20, "s")
+        write_batch([], tmp_path, 20)
 
 
 def test_mark_part_sent_records_each_and_refuses_repeats(tmp_path, report_pdf):
     items = [_item(80, "J S", "1", path=report_pdf("report_SNBR_080_20260818.pdf"))]
     ledger = Ledger(tmp_path / "ledger.jsonl")
-    batch = write_batch(items, tmp_path / "identified", ["dr@sunnybrook.ca"], 20, "s", ledger=ledger)
+    batch = write_batch(items, tmp_path / "identified", 20, ledger=ledger)
     results = mark_part_sent(ledger, batch, batch.parts[0])
     assert [(r[1], r[2]) for r in results] == [(True, "recorded")]
     assert ledger.state().status(items[0].report) == STATUS_SENT
     again = mark_part_sent(ledger, batch, batch.parts[0])
     assert again[0][1] is False and "already marked sent" in again[0][2]
+
+
+def test_single_reports_can_be_marked_sent_with_their_own_part(tmp_path, report_pdf):
+    """Sending is manual and need not follow the parts: one report at a time."""
+    items = [
+        _item(n, f"P {n}", str(n), path=report_pdf(f"report_SNBR_{n:03d}_20260818.pdf", big=True))
+        for n in (1, 2, 3)
+    ]
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    batch = write_batch(items, tmp_path / "identified", 2, ledger=ledger, when=datetime(2026, 9, 8))
+    assert len(batch.parts) >= 2, "fixture must span parts"
+    last = batch.parts[-1].entries[-1]
+
+    results = mark_sent(ledger, batch, [last])
+    assert [(r[0], r[1]) for r in results] == [(last, True)]
+    state = ledger.state()
+    assert state.status(last.item.report) == STATUS_SENT
+    others = [e for e in batch.entries if e is not last]
+    assert all(state.status(e.item.report) == STATUS_UNSENT for e in others)
+    record = state.sent_record(last.item.report)
+    assert (record.run_id, record.part, record.parts) == (batch.run_id, len(batch.parts), len(batch.parts))
+    assert record.recipients == [], "the app no longer knows who a report is emailed to"
+
+
+def test_marking_the_whole_batch_records_every_report(tmp_path, report_pdf):
+    items = [_item(n, f"P {n}", str(n), path=report_pdf(f"report_SNBR_{n:03d}_20260818.pdf")) for n in (1, 2)]
+    ledger = Ledger(tmp_path / "ledger.jsonl")
+    batch = write_batch(items, tmp_path / "identified", 20, ledger=ledger)
+    results = mark_sent(ledger, batch, batch.entries)
+    assert all(ok for _, ok, _ in results) and len(results) == 2
+    assert all(ledger.state().status(i.report) == STATUS_SENT for i in items)
+
+
+def test_an_entry_from_another_batch_is_refused(tmp_path, report_pdf):
+    items = [_item(1, "A", "1", path=report_pdf("report_SNBR_001_20260818.pdf"))]
+    first = write_batch(items, tmp_path / "identified", 20, when=datetime(2026, 9, 8, 9))
+    second = write_batch(items, tmp_path / "identified", 20, when=datetime(2026, 9, 8, 10))
+    with pytest.raises(ValueError):
+        mark_sent(Ledger(tmp_path / "ledger.jsonl"), second, first.entries)
