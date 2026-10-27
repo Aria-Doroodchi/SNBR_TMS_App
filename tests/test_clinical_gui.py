@@ -16,7 +16,13 @@ pypdf = pytest.importorskip("pypdf")
 ctk = pytest.importorskip("customtkinter")
 
 from clinical import settings as cs
-from tests._clinical_fixtures import write_world
+from clinical_gui.app import ClinicalApp
+from tests._clinical_fixtures import ROSTER_ROWS, write_roster, write_world
+from tests._mainloop import run_mainloop_until
+
+# Taken before the module fixture swaps in the synchronous stand-in, for the
+# tests that must exercise the genuine worker thread.
+_THREADED_RUN = ClinicalApp._run_in_thread
 
 
 def _synchronous_generate_async(self, entry):
@@ -29,11 +35,11 @@ def _synchronous_generate_async(self, entry):
     self._on_gen_success(entry.key, result)
 
 
-def _synchronous_run(self, work, on_done):
+def _synchronous_run(self, work, on_done, on_error=None):
     try:
         result = work()
     except Exception as exc:
-        self._on_error(exc)
+        (on_error or self._on_error)(exc)
         return
     on_done(result)
 
@@ -46,7 +52,6 @@ def world(tmp_path_factory):
 @pytest.fixture(scope="module")
 def app(world):
     """A real ClinicalApp with settings pointed at the synthetic world."""
-    from clinical_gui.app import ClinicalApp
     from clinical_gui.graphs_panel import ClinicalGraphsPanel
 
     # Module scope means the autouse settings isolation is not in effect here,
@@ -283,6 +288,48 @@ def test_settings_tab_has_the_two_inputs_and_the_export_folder_only(app):
     }
     texts = " ".join(_labels(app._tabs.tab("Settings"))).lower()
     assert "mem" not in texts.split() and "redcap" not in texts and "ledger" not in texts
+
+
+# -- the files changing underneath the app -------------------------------------
+#
+# Reported from the lab: after the archive CSV and the enrolment log were
+# updated, the window sat on "Reading the archive CSV and the enrolment
+# workbook..." for good, with Save settings and Reload data greyed out. A read
+# that fails -- here, the workbook caught half-written mid-save -- has to give
+# the window back and say why, and the next Reload has to see the new file.
+# These run the real worker thread: the synchronous stand-in above reports the
+# error itself and so cannot see what the genuine one does with it.
+
+def _threaded_load(app, monkeypatch):
+    monkeypatch.setattr(app, "_run_in_thread", _THREADED_RUN.__get__(app))
+    app._on_load()
+    assert app._busy, "the load should have started"
+    return run_mainloop_until(app, lambda: not app._busy)
+
+
+def test_a_failed_read_gives_the_window_back_and_says_why(app, world, monkeypatch, tmp_path):
+    half_saved = tmp_path / "roster.xlsx"
+    data = world["roster"].read_bytes()
+    half_saved.write_bytes(data[: len(data) // 2])
+    monkeypatch.setitem(app._controller.settings, cs.KEY_ROSTER_PATH, str(half_saved))
+
+    assert _threaded_load(app, monkeypatch), "the window stayed busy after the read failed"
+    status = app._status_var.get()
+    assert "BadZipFile" in status
+    assert "Reload data" in status, "a transient failure should say how to retry"
+    assert app._save_btn.cget("state") == "normal"
+    assert app._load_btn.cget("state") == "normal"
+
+
+def test_reload_after_the_log_is_updated_sees_the_new_patient(app, world, monkeypatch, tmp_path):
+    updated = write_roster(
+        tmp_path / "roster.xlsx", rows=[*ROSTER_ROWS, ("ZZ-SNBR-150", "Newly Enrolled", "7777777")],
+    )
+    monkeypatch.setitem(app._controller.settings, cs.KEY_ROSTER_PATH, str(updated))
+
+    assert _threaded_load(app, monkeypatch), "the reload never finished"
+    assert app._status_var.get().startswith("Loaded")
+    assert [p.display_name for p in app._controller.search("Newly Enrolled")] == ["Newly Enrolled"]
 
 
 def test_unconfigured_app_opens_on_settings(world):

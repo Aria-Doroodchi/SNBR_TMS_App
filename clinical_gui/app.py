@@ -391,20 +391,43 @@ class ClinicalApp(ctk.CTk):
         color = ERROR_COLOR if error else (_WARN_COLOR if warn else self._status_default_color)
         self._status_label.configure(text_color=color)
 
-    def _run_in_thread(self, work, on_done):
+    def _run_in_thread(self, work, on_done, on_error=None):
+        on_error = on_error or self._on_error
+
         def target():
             try:
                 result = work()
             except Exception as exc:   # surfaced to the status line, never lost
-                self.after(0, lambda: self._on_error(exc))
+                # Passed as an argument, not read by a lambda later: Python
+                # unbinds ``exc`` when this block ends, so a lambda raised
+                # NameError inside Tk and the window stayed busy for good.
+                self.after(0, on_error, exc)
                 return
-            self.after(0, lambda: on_done(result))
+            self.after(0, self._deliver, on_done, on_error, result)
         threading.Thread(target=target, daemon=True).start()
+
+    def _deliver(self, on_done, on_error, result):
+        """Hand *result* to *on_done*; a failure there must still free the window."""
+        try:
+            on_done(result)
+        except Exception as exc:
+            on_error(exc)
 
     def _on_error(self, exc: Exception):
         self._set_busy(False)
         self._graphs.set_exporting(False)
         self._set_status(f"{type(exc).__name__}: {exc}", error=True)
+
+    def _on_load_error(self, exc: Exception):
+        # The usual cause is a file being replaced while it is read: the
+        # workbook mid-save in Excel, or a new CSV still being copied in.
+        self._on_error(exc)
+        self._set_status(
+            f"Could not read the archive CSV or the enrolment workbook. "
+            f"{type(exc).__name__}: {exc}. If either file is open in Excel or still "
+            f"being saved or copied, wait for it to finish, then press Reload data.",
+            error=True,
+        )
 
     def _on_load(self):
         if self._busy:
@@ -416,7 +439,7 @@ class ClinicalApp(ctk.CTk):
             return
         self._set_busy(True)
         self._set_status("Reading the archive CSV and the enrolment workbook...")
-        self._run_in_thread(self._controller.load, self._on_loaded)
+        self._run_in_thread(self._controller.load, self._on_loaded, self._on_load_error)
 
     def _on_loaded(self, directory):
         self._selected = None

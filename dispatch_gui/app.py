@@ -469,10 +469,20 @@ class DispatchApp(ctk.CTk):
             try:
                 result = work()
             except Exception as exc:   # surfaced to the status line, never lost
-                self.after(0, lambda: self._on_error(exc))
+                # Passed as an argument, not read by a lambda later: Python
+                # unbinds ``exc`` when this block ends, so a lambda raised
+                # NameError inside Tk and the window stayed busy for good.
+                self.after(0, self._on_error, exc)
                 return
-            self.after(0, lambda: on_done(result))
+            self.after(0, self._deliver, on_done, result)
         threading.Thread(target=target, daemon=True).start()
+
+    def _deliver(self, on_done, result):
+        """Hand *result* to *on_done*; a failure there must still free the window."""
+        try:
+            on_done(result)
+        except Exception as exc:
+            self._on_error(exc)
 
     def _on_error(self, exc: Exception):
         self._set_busy(False)

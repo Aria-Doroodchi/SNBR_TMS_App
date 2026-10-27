@@ -17,6 +17,7 @@ pypdf = pytest.importorskip("pypdf")
 ctk = pytest.importorskip("customtkinter")
 
 from dispatch import settings as ds
+from tests._mainloop import run_mainloop_until
 
 
 def _workbook(path):
@@ -224,6 +225,27 @@ def test_settings_tab_has_no_email_fields(app):
     assert set(app._setting_vars) == set(ds.DEFAULTS)
     texts = " ".join(_labels(app._tabs.tab("Settings"))).lower()
     assert "recipient" not in texts and "subject" not in texts
+
+
+def test_a_failed_read_on_the_worker_thread_gives_the_window_back(app, world, monkeypatch, tmp_path):
+    """The genuine thread, not a stand-in: the error must reach the status line.
+
+    The worker used to schedule ``lambda: self._on_error(exc)``, and Python
+    unbinds ``exc`` when the except block ends, so the callback raised
+    NameError inside Tk and the window stayed busy -- Save and Reload greyed
+    out -- until it was closed.
+    """
+    half_saved = tmp_path / "roster.xlsx"
+    data = (world / "roster.xlsx").read_bytes()
+    half_saved.write_bytes(data[: len(data) // 2])
+    monkeypatch.setitem(app._controller.settings, ds.KEY_ROSTER_PATH, str(half_saved))
+
+    app._on_load()
+    assert app._busy
+    assert run_mainloop_until(app, lambda: not app._busy), "the window stayed busy"
+    assert "BadZipFile" in app._status_var.get()
+    assert app._save_btn.cget("state") == "normal"
+    assert app._load_btn.cget("state") == "normal"
 
 
 def test_unconfigured_app_opens_on_settings(world):
