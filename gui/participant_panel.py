@@ -32,6 +32,7 @@ class ParticipantPanel(ctk.CTkFrame):
         self._id_var = ctk.StringVar()
         self._error_var = ctk.StringVar()
         self._study_var = ctk.StringVar(value="All Studies")
+        self._subject_type_var = ctk.StringVar()
 
         # Master (unfiltered) ID list — updated by _set_id_options.
         self._all_ids: list[int] = []
@@ -170,6 +171,15 @@ class ParticipantPanel(ctk.CTkFrame):
             anchor="w",
         ).grid(row=2, column=0, sticky="w")
 
+        # The selected participant's type at the selected visit.
+        self._subject_type_label = ctk.CTkLabel(
+            right,
+            textvariable=self._subject_type_var,
+            font=FONT_BODY,
+            anchor="w",
+        )
+        self._subject_type_label.grid(row=3, column=0, sticky="w", pady=(8, 0))
+
         # ── Error label ────────────────────────────────────
         self._error_label = ctk.CTkLabel(
             self._footer,
@@ -240,6 +250,7 @@ class ParticipantPanel(ctk.CTkFrame):
 
         # Mark visit dates for the pre-selected ID
         self._update_calendar_markers(id_filter=recent_id)
+        self._update_subject_type()
 
         # Show dropdown immediately so user can browse/select
         self._show_dropdown()
@@ -269,6 +280,7 @@ class ParticipantPanel(ctk.CTkFrame):
         if recent_date is not None:
             self._calendar.selection_set(recent_date)
         self._update_calendar_markers(id_filter=recent_id)
+        self._update_subject_type()
 
         self._updating = False
 
@@ -287,6 +299,7 @@ class ParticipantPanel(ctk.CTkFrame):
             dates = self._controller.get_visit_dates(id_filter=pid, study_filter=study)
             if dates:
                 self._calendar.selection_set(max(dates))
+        self._update_subject_type()
 
         self._updating = False
 
@@ -318,6 +331,7 @@ class ParticipantPanel(ctk.CTkFrame):
             if current not in ids:
                 self._id_var.set(str(ids[0]))
         self._suppress_search = False
+        self._update_subject_type()
 
         self._updating = False
 
@@ -453,6 +467,7 @@ class ParticipantPanel(ctk.CTkFrame):
             self._show_dropdown()
         else:
             self._hide_dropdown()
+        self._update_subject_type()
 
     def _rebuild_dropdown(self, ids: list[int]):
         """Destroy existing buttons and create new ones for *ids*."""
@@ -539,3 +554,17 @@ class ParticipantPanel(ctk.CTkFrame):
         dates = self._controller.get_visit_dates(study_filter=study)
         for d in dates:
             self._calendar.calevent_create(d, "Visit", _VISIT_TAG)
+
+    def _update_subject_type(self):
+        """Show the selected participant's type (Control / Patient) under the
+        calendar, as recorded at the selected visit."""
+        pid = self._parse_id(self._id_var.get())
+        if pid is None or pid not in self._all_ids:
+            self._subject_type_var.set("")
+            return
+        subject_type = self._controller.get_subject_type(
+            pid, self._get_selected_date(), study_filter=self._get_study_filter(),
+        )
+        self._subject_type_var.set(
+            f"Participant type: {subject_type or 'not recorded'}"
+        )

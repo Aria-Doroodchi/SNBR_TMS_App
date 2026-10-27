@@ -566,6 +566,39 @@ class AppController:
         ids = self.get_unique_ids(date_filter=latest, study_filter=study_filter)
         return (ids[0] if ids else None, latest)
 
+    def get_subject_type(
+        self,
+        participant_id: int,
+        visit_date: datetime | None = None,
+        study_filter: str | None = None,
+    ) -> str | None:
+        """Return ``"Control"`` / ``"Patient"`` for a participant, or None.
+
+        Read from the chosen visit's rows, since a participant's rows can
+        disagree (SNBR-080 is a Control at baseline and a Patient at follow-up).
+        With no date, or a date without that participant's visit, the latest
+        visit that records a type is used.
+        """
+        df = self._dataframe
+        if df is None or "ID" not in df.columns or "Subject_type" not in df.columns:
+            return None
+        df = self._filter_by_study(df, study_filter)
+        rows = df[pd.to_numeric(df["ID"], errors="coerce") == participant_id]
+        if visit_date is not None and "Date" in rows.columns:
+            on_date = rows[rows["Date"] == visit_date.strftime(self._DATE_FMT)]
+            found = self._first_str(on_date, "Subject_type")
+            if found:
+                return found
+        typed = rows[rows["Subject_type"].notna()]
+        if typed.empty:
+            return None
+        if "Date" in typed.columns:
+            # By parsed date, not the dd/mm/yyyy string, which sorts wrongly.
+            dates = pd.to_datetime(typed["Date"], format=self._DATE_FMT, errors="coerce")
+            if dates.notna().any():
+                typed = typed.loc[[dates.idxmax()]]
+        return str(typed["Subject_type"].iloc[0]).strip() or None
+
     def set_selected_participant(self, participant_id: int, visit_date: datetime):
         """Store the user's participant/date selection for downstream use."""
         self._selected_id = participant_id
